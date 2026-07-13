@@ -210,10 +210,60 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 .addline select{flex:1;min-width:0;padding:10px;font-size:13px}
 .addline input{width:64px;padding:10px;text-align:center}
 
+/* Modo conteo */
+.cnthead{display:flex;align-items:center;gap:10px;margin:18px 0 4px}
+.cnthead .cprog{font-family:'Instrument Serif',serif;font-size:24px;margin-top:2px}
+.cnthead .cprog b{color:var(--fresa)}
+.cnthead .btn{margin-left:auto;flex:none}
+.cnt{
+  background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;
+}
+.cnt.hecho{border-color:var(--leaf);background:#F6FCF8}
+.cnt .ctxt{flex:1;min-width:0}
+.cnt .nm{font-weight:700;font-size:15px;line-height:1.25}
+.cnt .cmeta{font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cdif{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:11px;padding:2px 7px;border-radius:20px}
+.cdif.up{background:#E6F4EC;color:var(--leaf)}
+.cdif.dn{background:#FCE7EB;color:var(--fresa-dark)}
+.cdif.eq{background:#F1EBEC;color:var(--muted)}
+.cinput{
+  width:78px;height:46px;text-align:center;flex:none;
+  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:18px;
+  border:2px solid var(--line);border-radius:11px;
+}
+.cnt.hecho .cinput{border-color:var(--leaf);color:var(--leaf)}
+.cuni{font-size:11px;color:var(--muted);font-weight:700;width:32px;flex:none}
+.cntbar{
+  position:fixed;left:0;right:0;bottom:calc(60px + var(--safe-b));z-index:44;
+  background:var(--ink);padding:12px 14px;box-shadow:0 -6px 24px -10px rgba(0,0,0,.5);
+}
+.cntbar .inner{max-width:760px;margin:0 auto;display:flex;gap:10px}
+.cntbar .btn{flex:1}
+.cntbar .btn.ghost{flex:0 0 130px}
+
+/* Arranque: nunca se ha contado */
+.arranque{
+  background:#fff;border:2px dashed var(--fresa);border-radius:16px;
+  padding:16px;margin-bottom:10px;font-size:13px;line-height:1.6;color:var(--muted);
+}
+.arranque b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+
 /* Barra de exportar */
 .expbar{display:flex;gap:8px;margin:10px 0 0;flex-wrap:wrap}
 .expbar .btn{flex:1;white-space:nowrap}
 .expbar.sm .btn{flex:1;font-size:12px;padding:8px 10px}
+
+/* Aviso dentro de un pedido aprobado */
+.aviso{
+  margin-top:10px;padding:11px 12px;border-radius:11px;
+  background:#FCE7EB;border-left:3px solid var(--fresa);
+  font-size:12.5px;line-height:1.6;
+}
+.aviso b{display:block;color:var(--fresa-dark);margin-bottom:3px;font-size:13px}
+.aviso span{display:block;color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:11.5px}
+.aviso.ok{background:#E6F4EC;border-left-color:var(--leaf)}
+.aviso.ok b{color:var(--leaf);margin-bottom:0}
 
 /* Pedido diario (fresa) */
 .diario{
@@ -347,7 +397,7 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
     <div class="sbody" id="sh-body"></div>
     <div class="sfoot">
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
-        <span class="eyebrow">Costo estimado</span>
+        <span class="eyebrow" id="sh-costlbl">Costo estimado</span>
         <span class="mono" style="font-weight:700;font-size:17px" id="sh-total">$0.00</span>
       </div>
       <button class="btn wide" id="sh-send" onclick="enviarPedido()">Enviar pedido</button>
@@ -373,6 +423,7 @@ const TIENDAS = ['moctezuma','narvarte','balbuena'];
 
 let CAT=[], INV={}, NIV={}, MOV=[], REQ=[], draft={};
 let sesion=null, who='moctezuma', tab='inv', q='', filtroCat='', cargando=false;
+let modoConteo=false, conteo={};   // conteo = capturas pendientes de guardar
 
 const hoy = () => new Date().toISOString().slice(0,10);
 const money = n => '$' + (Math.round(n*100)/100).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -622,12 +673,24 @@ function textoPedido(r){
   return L.join('\n');
 }
 function csvPedido(r){
-  const filas = [['Insumo','Categoría','Unidad','Cantidad','Precio unitario','Subtotal','Proveedor']];
+  const conPrecio = isDir();
+  const filas = [conPrecio
+    ? ['Insumo','Categoría','Unidad','Cantidad','Precio unitario','Subtotal','Proveedor']
+    : ['Insumo','Categoría','Unidad','Cantidad']];
   r.lineas.forEach(l => { const i = item(l.insumo_id); if(!i) return;
     const c = Number(l.surtido ?? l.aprob), p = precioLinea(l);
-    filas.push([i.nombre, i.categoria, i.unidad, c, p, (c*p).toFixed(2), i.proveedor || '']);
+    filas.push(conPrecio
+      ? [i.nombre, i.categoria, i.unidad, c, p, (c*p).toFixed(2), i.proveedor || '']
+      : [i.nombre, i.categoria, i.unidad, c]);
   });
   return filas;
+}
+function textoProveedor(prov){
+  const items = necesidades().filter(n => (n.i.proveedor || 'Sin proveedor asignado') === prov);
+  const L = [`🍓 *Lady Fresa* — pedido del ${hoy()}`, '', `*${prov}*`, ''];
+  items.forEach(n => L.push(`• ${n.i.nombre}: *${n.comprar}* ${n.i.unidad}`));
+  L.push('', 'Gracias!');
+  return L.join('\n');
 }
 function textoNecesidades(){
   const ns = necesidades();
@@ -651,11 +714,16 @@ function csvNecesidades(){
   return filas;
 }
 function csvInventario(loc){
-  const filas = [['Insumo','Categoría','Unidad','Existencia','Mínimo','Par','Estado','Costo unitario','Valor']];
+  const conPrecio = isDir();
+  const filas = [conPrecio
+    ? ['Insumo','Categoría','Unidad','Existencia','Mínimo','Par','Estado','Costo unitario','Valor']
+    : ['Insumo','Categoría','Unidad','Existencia','Mínimo','Par','Estado']];
   CAT.forEach(i => {
     const s = stock(loc,i.id), n = nivel(loc,i.id), e = estado(loc,i.id);
     if (n.par === 0 && !s) return;
-    filas.push([i.nombre, i.categoria, i.unidad, s, n.min, n.par, etiqueta(e), i.costo, (s*Number(i.costo)).toFixed(2)]);
+    filas.push(conPrecio
+      ? [i.nombre, i.categoria, i.unidad, s, n.min, n.par, etiqueta(e), i.costo, (s*Number(i.costo)).toFixed(2)]
+      : [i.nombre, i.categoria, i.unidad, s, n.min, n.par, etiqueta(e)]);
   });
   return filas;
 }
@@ -732,8 +800,10 @@ function pintarSheet(){
   const total = lineas.reduce((a,[id,c]) => a + c * Number(item(id).costo), 0);
   document.getElementById('sh-title').textContent = dir ? 'Orden de compra' : 'Comanda de pedido';
   document.getElementById('sh-meta').textContent = (dir ? 'Comisariato → proveedores' : LOCS[who].short + ' → comisariato') + ' · ' + hoy();
-  document.getElementById('sh-total').textContent = money(total);
   document.getElementById('sh-send').textContent = dir ? 'Generar orden' : 'Enviar pedido';
+  // Las tiendas no ven precios: solo cuántos insumos van
+  document.getElementById('sh-costlbl').textContent = isDir() ? 'Costo estimado' : 'Insumos en la comanda';
+  document.getElementById('sh-total').textContent = isDir() ? money(total) : String(lineas.length);
   document.getElementById('sh-body').innerHTML = lineas.length ? lineas.map(([id,c]) => {
     const i = item(id);
     return `<div class="cl">
@@ -742,6 +812,52 @@ function pintarSheet(){
       <button class="x" onclick="addDraft('${id}',0);pintarSheet()" aria-label="Quitar">×</button>
     </div>`;
   }).join('') : '<div class="empty"><b>Comanda vacía</b>Marca cantidades en la lista.</div>';
+}
+
+/* ===== Modo conteo: para el inventario inicial y los conteos semanales ===== */
+function toggleConteo(){
+  if (modoConteo && Object.keys(conteo).length && !confirm('Tienes capturas sin guardar. ¿Salir sin guardarlas?')) return;
+  modoConteo = !modoConteo;
+  conteo = {}; q = ''; filtroCat = '';
+  window.scrollTo(0,0); render();
+  if (modoConteo) toast('Captura la cantidad y dale Enter para pasar al siguiente.');
+}
+function capturar(id, val){
+  const v = val === '' ? undefined : Math.max(0, Number(val)||0);
+  if (v === undefined) delete conteo[id]; else conteo[id] = v;
+  const h = document.getElementById('cnt-hechos');
+  if (h) h.textContent = Object.keys(conteo).length;
+  const b = document.getElementById('cnt-guardar');
+  if (b) b.disabled = !Object.keys(conteo).length;
+}
+function siguienteCampo(idx){
+  const el = document.querySelector(`[data-cidx="${idx+1}"]`);
+  if (el){ el.focus(); el.select(); el.scrollIntoView({block:'center', behavior:'smooth'}); }
+  else { document.activeElement.blur(); toast('Terminaste la lista. Dale a Guardar conteo.'); }
+}
+async function guardarConteo(){
+  const entradas = Object.entries(conteo);
+  if (!entradas.length) return;
+  setDot('busy');
+  let fallas = 0;
+  for (let k = 0; k < entradas.length; k += 8){
+    const res = await Promise.all(entradas.slice(k, k+8).map(([id,v]) =>
+      db.rpc('lfi_ajustar', {p_suc:who, p_insumo:id, p_nueva:v, p_por:LOCS[sesion.sucursal].short})));
+    fallas += res.filter(r => r.error).length;
+  }
+  const n = entradas.length;
+  conteo = {}; modoConteo = false;
+  toast(fallas ? `Se guardaron ${n-fallas} de ${n}. Revisa tu internet y repite los que falten.`
+               : `✅ Conteo guardado: ${n} ${n===1?'insumo':'insumos'}`);
+  await cargar(true); render();
+}
+function llenarCerosNoContados(){
+  const faltan = filtra(true).filter(i => conteo[i.id] === undefined);
+  if (!faltan.length){ toast('Ya capturaste todo.'); return; }
+  if (!confirm(`Vas a poner en CERO los ${faltan.length} insumos que no capturaste. Solo hazlo si de verdad no hay nada de ellos. ¿Le seguimos?`)) return;
+  faltan.forEach(i => conteo[i.id] = 0);
+  render();
+  toast(`${faltan.length} insumos marcados en cero.`);
 }
 
 /* ===== Piezas de UI ===== */
@@ -774,7 +890,60 @@ function stepper(v, fnMenos, fnMas, fnSet, tiene){
 /* ===== Vistas ===== */
 function vInventario(){
   const loc = who, lista = filtra(true);
+
+  /* ---- Modo conteo ---- */
+  if (modoConteo){
+    let idx = 0, html = '';
+    for (const c of cats()){
+      const items = lista.filter(i => i.categoria === c);
+      if (!items.length) continue;
+      html += `<div class="seccion">${esc(c)}</div>`;
+      for (const i of items){
+        const val = conteo[i.id];
+        const hecho = val !== undefined;
+        const antes = stock(loc,i.id);
+        const dif = hecho ? val - antes : 0;
+        html += `<div class="cnt ${hecho?'hecho':''}">
+          <div class="ctxt">
+            <div class="nm">${esc(i.nombre)}</div>
+            <div class="cmeta">
+              <span class="mono">antes: ${antes} ${esc(i.unidad)}</span>
+              ${hecho && dif !== 0 ? `<span class="cdif ${dif>0?'up':'dn'}">${dif>0?'+':''}${dif}</span>` : ''}
+              ${hecho && dif === 0 ? '<span class="cdif eq">sin cambio</span>' : ''}
+            </div>
+          </div>
+          <input class="cinput" type="number" inputmode="decimal" data-cidx="${idx}"
+            value="${hecho ? val : ''}" placeholder="—"
+            onfocus="this.select()"
+            oninput="capturar('${i.id}', this.value)"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}">
+          <span class="cuni">${esc(i.unidad)}</span>
+        </div>`;
+        idx++;
+      }
+    }
+    const hechos = Object.keys(conteo).length;
+    return `<div class="cnthead">
+        <div>
+          <span class="eyebrow">Modo conteo · ${LOCS[loc].short}</span>
+          <div class="cprog"><b id="cnt-hechos">${hechos}</b> de <span id="cnt-total">${idx}</span> capturados</div>
+        </div>
+        <button class="btn sm ghost" onclick="toggleConteo()">Salir</button>
+      </div>
+      <p class="sub">Escribe la cantidad y dale <b>Enter</b> para saltar al siguiente. Lo que dejes vacío <b>no se toca</b>. Nada se guarda hasta que le des a Guardar.</p>
+      ${barra()}
+      ${html || '<div class="card empty"><b>Sin resultados</b></div>'}
+      <div class="cntbar">
+        <div class="inner">
+          <button class="btn ghost sm" onclick="llenarCerosNoContados()">Lo demás en 0</button>
+          <button class="btn" id="cnt-guardar" onclick="guardarConteo()" ${hechos?'':'disabled'}>Guardar conteo (${hechos})</button>
+        </div>
+      </div>`;
+  }
+
+  /* ---- Vista normal ---- */
   const bajos = CAT.filter(i => ['out','low'].includes(estado(loc,i.id))).length;
+  const sinContar = lista.filter(i => stock(loc,i.id) === 0).length;
   let html = '';
   for (const c of cats()){
     const items = lista.filter(i => i.categoria === c);
@@ -795,11 +964,19 @@ function vInventario(){
       </div>`;
     }
   }
+
+  const arranque = sinContar === lista.length && lista.length > 0;
+
   return `<h2 class="page">Inventario</h2>
   <p class="sub">${LOCS[loc].n} · <b>${bajos}</b> ${bajos===1?'insumo':'insumos'} por resurtir. Cuenta lo que hay; se guarda solo.</p>
-  <div class="expbar sm" style="margin-bottom:4px">
-    <button class="btn sm ghost" onclick="descargarCSV('inventario_${LOCS[loc].short}_${hoy()}', csvInventario('${loc}'))">⬇︎ Exportar a Excel</button>
-  </div>
+  ${arranque ? `<div class="arranque">
+      <b>Todavía no has hecho tu conteo inicial</b>
+      Todo está en cero, por eso ves puros focos rojos. Entra a <b>modo conteo</b>, recorre la bodega una sola vez y captura lo que hay. De ahí en adelante ya solo corriges.
+      <button class="btn wide" onclick="toggleConteo()" style="margin-top:12px">🔢 Empezar el conteo inicial</button>
+    </div>` : `<div class="expbar sm" style="margin-bottom:4px">
+      <button class="btn sm ghost" onclick="toggleConteo()">🔢 Modo conteo</button>
+      <button class="btn sm ghost" onclick="descargarCSV('inventario_${LOCS[loc].short}_${hoy()}', csvInventario('${loc}'))">⬇︎ Excel</button>
+    </div>`}
   ${barra()}
   ${html || '<div class="card empty"><b>Sin resultados</b>Prueba con otra búsqueda.</div>'}`;
 }
@@ -890,44 +1067,65 @@ function vComprar(){
           <span class="nuni">${esc(n.i.unidad)}</span>
         </div>
       </div>`).join('')}
+      <div class="expbar sm" style="padding:10px 12px;background:#FFFAF9;margin:0">
+        <button class="btn sm ghost" onclick="copiar(textoProveedor('${esc(p).replace(/'/g,"\\'")}'))">📋 Copiar</button>
+        <button class="btn sm" onclick="generarOrden('${esc(p).replace(/'/g,"\\'")}')">Generar orden</button>
+      </div>
     </div>`).join('');
 
   return `<h2 class="page">Comprar</h2>
-  <p class="sub">Esto es lo que te falta: <b>lo que las tiendas ya pidieron</b> más lo que necesitas para volver a tu nivel par. Agrupado por proveedor, listo para mandar.</p>
+  <p class="sub">Aquí llega solo lo que <b>no puedes cubrir con tu bodega</b>. Si una tienda pidió algo y ya lo tienes, no aparece: nomás lo surtes. <b>Cada proveedor genera su propia orden</b>, así la fresa la recibes hoy y los desechables cuando lleguen.</p>
   ${ns.length ? `
     <div class="expbar">
-      <button class="btn sm ghost" onclick="copiar(textoNecesidades())">📋 Copiar para WhatsApp</button>
-      <button class="btn sm ghost" onclick="descargarCSV('compras_${hoy()}', csvNecesidades())">⬇︎ Excel</button>
-      <button class="btn sm" onclick="generarDesdeNecesidades()">Generar orden</button>
+      <button class="btn sm ghost" onclick="descargarCSV('compras_${hoy()}', csvNecesidades())">⬇︎ Excel de todo</button>
+      <button class="btn sm dark" onclick="generarTodas()">Generar todas las órdenes</button>
     </div>
     ${bloques}
-    <p class="sub" style="margin-top:8px">Al generar la orden vas a poder capturar el <b>precio del día</b> de cada cosa antes de recibirla.</p>
-  ` : `<div class="card empty"><b>No necesitas comprar nada</b>El comisariato cubre lo que las tiendas pidieron y está en su nivel par.</div>`}`;
+  ` : `<div class="card empty"><b>No necesitas comprar nada</b>Lo que las tiendas pidieron ya lo tienes en bodega, y estás en tu nivel par. Ve a Pedidos y súrtelos.</div>`}`;
 }
 
-async function generarDesdeNecesidades(){
-  const ns = necesidades();
-  if (!ns.length) return;
-  setDot('busy');
+async function crearOrden(prov, items){
   const { data:ped, error } = await db.from('lfi_pedidos')
-    .insert({tipo:'compra', sucursal:'centro', fecha:hoy(), estado:'aprobado'}).select().single();
-  if (error){ toast('No se pudo generar la orden.'); setDot('err'); return; }
-  await db.from('lfi_pedido_lineas').insert(ns.map(n => ({
+    .insert({tipo:'compra', sucursal:'centro', fecha:hoy(), estado:'aprobado', proveedor:prov}).select().single();
+  if (error) return false;
+  await db.from('lfi_pedido_lineas').insert(items.map(n => ({
     pedido_id: ped.id, insumo_id: n.i.id, cant: n.comprar, aprob: n.comprar,
   })));
-  toast('Orden generada. Captura los precios del día.');
+  return true;
+}
+
+/* Una orden por proveedor: cada quien llega cuando llega */
+async function generarOrden(prov){
+  const items = necesidades().filter(n => (n.i.proveedor || 'Sin proveedor asignado') === prov);
+  if (!items.length) return;
+  setDot('busy');
+  const ok = await crearOrden(prov, items);
+  toast(ok ? 'Orden de ' + prov + ' generada' : 'No se pudo generar la orden.');
+  tab = 'com';
+  await cargar(true); render();
+}
+
+async function generarTodas(){
+  const ns = necesidades();
+  if (!ns.length) return;
+  const porProv = {};
+  ns.forEach(n => { const p = n.i.proveedor || 'Sin proveedor asignado'; (porProv[p] = porProv[p] || []).push(n); });
+  setDot('busy');
+  for (const [p, items] of Object.entries(porProv)) await crearOrden(p, items);
+  toast(`Se generaron ${Object.keys(porProv).length} órdenes, una por proveedor.`);
   tab = 'com';
   await cargar(true); render();
 }
 
 function cbar(){
   const lineas = Object.entries(draft).filter(([,c]) => c > 0);
-  if (tab !== 'req' || !lineas.length) return '';
+  if (tab !== 'req' || !lineas.length || verCentro()) return '';
   const total = lineas.reduce((a,[id,c]) => a + c * Number(item(id).costo), 0);
   return `<div class="cbar"><div class="inner">
-    <div class="info"><b>${lineas.length} ${lineas.length===1?'insumo':'insumos'}</b><span>${money(total)} estimado</span></div>
+    <div class="info"><b>${lineas.length} ${lineas.length===1?'insumo':'insumos'}</b>
+      <span>${isDir() ? money(total) + ' estimado' : 'listos para enviar'}</span></div>
     <button class="btn ghost sm" onclick="abrirSheet()">Ver</button>
-    <button class="btn" onclick="abrirSheet()">${verCentro()?'Generar':'Enviar'}</button>
+    <button class="btn" onclick="abrirSheet()">Enviar</button>
   </div></div>`;
 }
 
@@ -966,7 +1164,23 @@ function vPedidos(){
       acc = `<div class="acciones"><button class="btn sm ghost" onclick="setEstado('${r.id}','cancelado')">Cancelar pedido</button></div>`;
     } else if (isDir()){
       if (r.estado === 'enviado')  acc = `<div class="acciones"><button class="btn sm" onclick="setEstado('${r.id}','aprobado')">Aprobar</button><button class="btn sm ghost" onclick="setEstado('${r.id}','cancelado')">Cancelar</button></div>`;
-      if (r.estado === 'aprobado') acc = `<div class="acciones"><button class="btn sm dark" onclick="surtir('${r.id}')">Marcar como surtido</button></div>`;
+      if (r.estado === 'aprobado'){
+        // ¿Alcanza el comisariato para surtirlo completo?
+        const faltan = r.lineas.filter(l => Number(l.aprob) > stock('centro', l.insumo_id));
+        acc = faltan.length
+          ? `<div class="aviso">
+               <b>Te faltan ${faltan.length} ${faltan.length===1?'insumo':'insumos'} para surtir esto completo.</b>
+               ${faltan.slice(0,4).map(l => { const i = item(l.insumo_id);
+                 return `<span>• ${esc(i.nombre)}: piden ${l.aprob}, tienes ${stock('centro',l.insumo_id)}</span>`; }).join('')}
+               ${faltan.length > 4 ? `<span>• +${faltan.length-4} más</span>` : ''}
+             </div>
+             <div class="acciones">
+               <button class="btn sm" onclick="tab='req';window.scrollTo(0,0);render()">🛒 Ir a Comprar</button>
+               <button class="btn sm ghost" onclick="surtir('${r.id}')">Surtir lo que hay</button>
+             </div>`
+          : `<div class="aviso ok"><b>✅ Tienes todo. Se puede surtir completo.</b></div>
+             <div class="acciones"><button class="btn sm dark" onclick="surtir('${r.id}')">Marcar como surtido</button></div>`;
+      }
       if (r.estado === 'surtido')  acc = `<div class="acciones"><button class="btn sm ghost" onclick="revertir('${r.id}')">↩︎ Deshacer y corregir</button></div>`;
       if (r.estado === 'cancelado') acc = `<div class="acciones"><button class="btn sm ghost" onclick="setEstado('${r.id}','enviado')">Reabrir</button></div>`;
     }
@@ -979,10 +1193,10 @@ function vPedidos(){
       </div>
       <div class="lines">${lines || '<div class="empty" style="padding:16px">Pedido vacío</div>'}</div>
       ${editable ? selectorInsumos(r.id) : ''}
-      <div class="row" style="justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)">
+      ${isDir() ? `<div class="row" style="justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)">
         <span class="eyebrow">${r.estado==='surtido'?'Costo surtido':'Costo estimado'}</span>
         <span class="mono" style="font-weight:700">${money(total)}</span>
-      </div>
+      </div>` : ''}
       <div class="expbar sm">
         <button class="btn sm ghost" onclick='copiar(textoPedido(REQ.find(x=>x.id==="${r.id}")))'>📋 Copiar</button>
         <button class="btn sm ghost" onclick='descargarCSV("pedido_${LOCS[r.sucursal].short}_${r.fecha}", csvPedido(REQ.find(x=>x.id==="${r.id}")))'>⬇︎ Excel</button>
@@ -1032,7 +1246,7 @@ function vCompras(){
 
     return `<div class="card ped">
       <div class="hd">
-        <b>Orden de compra</b>
+        <b>${esc(r.proveedor || 'Orden de compra')}</b>
         <span class="stt ${r.estado}">${r.estado === 'aprobado' ? 'por recibir' : r.estado}</span>
         <span class="mono" style="margin-left:auto">${r.fecha}</span>
       </div>
@@ -1044,7 +1258,7 @@ function vCompras(){
       </div>
       <div class="expbar sm">
         <button class="btn sm ghost" onclick='copiar(textoPedido(REQ.find(x=>x.id==="${r.id}")))'>📋 Copiar para WhatsApp</button>
-        <button class="btn sm ghost" onclick='descargarCSV("orden_compra_${r.fecha}", csvPedido(REQ.find(x=>x.id==="${r.id}")))'>⬇︎ Excel</button>
+        <button class="btn sm ghost" onclick='descargarCSV("orden_${(r.proveedor||"compra").replace(/[^a-zA-Z0-9]/g,"_")}_${r.fecha}", csvPedido(REQ.find(x=>x.id==="${r.id}")))'>⬇︎ Excel</button>
       </div>
       ${acc}
     </div>`;
@@ -1129,13 +1343,15 @@ const ICONOS = {inv:'📦', req:'📝', ped:'🚚', com:'🛒', pan:'📊', mov:
 function render(){
   const pend = REQ.filter(r => r.tipo==='tienda' && r.estado==='enviado').length;
   const rec  = REQ.filter(r => r.tipo==='compra' && r.estado==='aprobado').length;
+  const porComprar = isDir() ? necesidades().length : 0;
 
-  const tabs = [['inv','Inventario',0], ['req', verCentro()?'Comprar':'Pedir', 0], ['ped','Pedidos', isDir()?pend:0]];
+  const tabs = [['inv','Inventario',0], ['req', verCentro()?'Comprar':'Pedir', verCentro()?porComprar:0], ['ped','Pedidos', isDir()?pend:0]];
   if (isDir()) tabs.push(['com','Compras', rec], ['pan','Panel',0]);
-  tabs.push(['mov','Historial',0], ['cat','Catálogo',0]);
+  tabs.push(['mov','Historial',0]);
+  if (isDir()) tabs.push(['cat','Catálogo',0]);
 
   const views = {inv:vInventario, req:vRequerimiento, ped:vPedidos, com:vCompras, pan:vPanel, mov:vMovimientos, cat:vCatalogo};
-  if (!views[tab] || (['com','pan'].includes(tab) && !isDir())) tab = 'inv';
+  if (!views[tab] || (['com','pan','cat'].includes(tab) && !isDir())) tab = 'inv';
 
   document.getElementById('ctxslot').innerHTML = isDir()
     ? `<select class="aqui" id="who">${Object.keys(LOCS).map(l => `<option value="${l}" ${who===l?'selected':''}>${LOCS[l].short}</option>`).join('')}</select>`
