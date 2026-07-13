@@ -2,11 +2,14 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lady Fresa · Inventario y Requerimientos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2B1A1F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lady Fresa">
+<title>Lady Fresa · Inventario</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
@@ -14,153 +17,233 @@
   --fresa:#E8294B; --fresa-dark:#B31A38;
   --ink:#2B1A1F; --muted:#8A7178;
   --cream:#FFF6F3; --card:#FFFFFF; --line:#F2DDE1;
-  --leaf:#2F8F5B; --amber:#D98614;
-  --shadow:0 1px 2px rgba(43,26,31,.06), 0 8px 24px -12px rgba(43,26,31,.18);
-  --r:14px;
+  --leaf:#2F8F5B; --amber:#D98614; --azul:#1F6B8C;
+  --shadow:0 1px 2px rgba(43,26,31,.05), 0 6px 18px -10px rgba(43,26,31,.18);
+  --safe-b: env(safe-area-inset-bottom, 0px);
 }
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Archivo',system-ui,-apple-system,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased;padding-bottom:40px}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{overscroll-behavior-y:contain}
+body{
+  font-family:'Archivo',system-ui,-apple-system,sans-serif;
+  background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased;
+  font-size:16px;
+  padding-bottom:calc(78px + var(--safe-b));   /* espacio para el menú de abajo */
+}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
-input,select,textarea{font-family:inherit;color:inherit}
-.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+input,select{font-family:inherit;color:inherit;font-size:16px}  /* 16px evita el zoom de iOS */
+.wrap{max-width:760px;margin:0 auto;padding:0 14px}
+.mono{font-family:'IBM Plex Mono',monospace}
 
-/* ---- Login ---- */
-#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-.loginbox{width:100%;max-width:360px;text-align:center}
-.loginbox .logo{font-family:'Instrument Serif',serif;font-size:38px;margin-bottom:6px}
-.loginbox .logo em{color:var(--fresa);font-style:italic}
-.loginbox .sublog{color:var(--muted);font-size:13px;margin-bottom:26px}
-.loginbox .card{padding:22px}
-.loginbox label{display:block;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.14em;font-weight:800;color:var(--muted);margin-bottom:6px}
-.loginbox select,.loginbox input{width:100%;margin-bottom:14px;padding:12px}
-.loginbox input{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:22px;letter-spacing:.5em;font-weight:600}
-.loginerr{color:var(--fresa);font-size:12px;font-weight:700;margin-bottom:10px;min-height:16px}
+/* ===== Login ===== */
+#login{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:22px}
+.loginbox{width:100%;max-width:380px;text-align:center}
+.loginbox .big{font-family:'Instrument Serif',serif;font-size:40px;margin-bottom:4px}
+.loginbox .big em{color:var(--fresa);font-style:italic}
+.loginbox .sublog{color:var(--muted);font-size:14px;margin-bottom:24px}
+.loginbox .card{padding:20px}
+.lbl{display:block;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.14em;font-weight:800;color:var(--muted);margin-bottom:7px}
+.loginbox select,.loginbox input{width:100%;margin-bottom:16px;padding:14px}
+.loginbox input{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:26px;letter-spacing:.45em;font-weight:700;padding-left:.45em}
+.loginerr{color:var(--fresa);font-size:13px;font-weight:700;margin-bottom:10px;min-height:18px}
 
-header{background:var(--ink);color:#fff;padding:18px 0 0;position:sticky;top:0;z-index:50;box-shadow:0 6px 20px -14px rgba(0,0,0,.6)}
-.brandrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-bottom:14px}
-.logo{font-family:'Instrument Serif',serif;font-size:27px;line-height:1}
-.logo em{color:var(--fresa);font-style:italic}
-.ctx{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.ctx label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#C8B3B8;font-weight:700}
-.ctx select{background:#3D272D;border:1px solid #55393F;color:#fff;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600}
-.aqui{background:#3D272D;border:1px solid #55393F;border-radius:9px;padding:8px 11px;font-size:13px;font-weight:700}
-.sync{display:flex;align-items:center;gap:6px;font-size:11px;color:#C8B3B8;font-weight:600;padding:8px 10px;border-radius:9px;border:1px solid #55393F}
-.sync:hover{background:#3D272D;color:#fff}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--leaf)}
+/* ===== Header ===== */
+header{background:var(--ink);color:#fff;position:sticky;top:0;z-index:40;padding-top:env(safe-area-inset-top,0px)}
+.hrow{display:flex;align-items:center;gap:10px;padding:12px 14px;max-width:760px;margin:0 auto}
+.brand{font-family:'Instrument Serif',serif;font-size:21px;line-height:1;white-space:nowrap}
+.brand em{color:var(--fresa);font-style:italic}
+.aqui{background:#3D272D;border:1px solid #55393F;color:#fff;border-radius:20px;padding:7px 12px;font-size:12px;font-weight:700;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+select.aqui{padding-right:24px}
+.hright{margin-left:auto;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--leaf);flex:none}
 .dot.busy{background:var(--amber)}
 .dot.err{background:var(--fresa)}
-.salir{font-size:11px;color:#8A7178;font-weight:700;padding:8px}
-.salir:hover{color:#fff}
-nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
-nav::-webkit-scrollbar{display:none}
-nav button{padding:11px 15px;font-size:13px;font-weight:600;color:#C8B3B8;border-bottom:3px solid transparent;white-space:nowrap}
-nav button:hover{color:#fff}
-nav button.on{color:#fff;border-bottom-color:var(--fresa)}
-nav button .pip{display:inline-block;min-width:17px;height:17px;line-height:17px;background:var(--fresa);color:#fff;border-radius:9px;font-size:10px;font-weight:800;margin-left:5px;padding:0 4px}
+.iconbtn{color:#C8B3B8;font-size:12px;font-weight:700;padding:8px 6px}
+.iconbtn:active{color:#fff}
 
-h2.page{font-family:'Instrument Serif',serif;font-size:29px;font-weight:400;margin:26px 0 3px}
-p.sub{color:var(--muted);font-size:14px;margin-bottom:18px;max-width:780px;line-height:1.5}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
-.btn{background:var(--fresa);color:#fff;border-radius:10px;padding:10px 16px;font-weight:700;font-size:13px;transition:.15s}
-.btn:hover{background:var(--fresa-dark)}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
-.btn.ghost:hover{background:var(--cream);border-color:var(--fresa)}
-.btn.dark{background:var(--ink)}
-.btn.dark:hover{background:#452c33}
-.btn.sm{padding:7px 11px;font-size:12px;border-radius:8px}
-.btn.wide{width:100%}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.mono{font-family:'IBM Plex Mono',monospace}
+/* ===== Menú inferior ===== */
+.tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:45;
+  background:#fff;border-top:1px solid var(--line);
+  display:flex;padding-bottom:var(--safe-b);
+  box-shadow:0 -4px 20px -12px rgba(43,26,31,.35);
+}
+.tabbar button{
+  flex:1;padding:9px 2px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:10px;font-weight:700;color:var(--muted);position:relative;min-height:60px;justify-content:center;
+}
+.tabbar button .ic{font-size:19px;line-height:1}
+.tabbar button.on{color:var(--fresa)}
+.tabbar button .pip{
+  position:absolute;top:5px;right:calc(50% - 20px);
+  min-width:17px;height:17px;line-height:17px;background:var(--fresa);color:#fff;
+  border-radius:9px;font-size:10px;font-weight:800;padding:0 4px;
+}
+
+/* ===== Estructura de página ===== */
+h2.page{font-family:'Instrument Serif',serif;font-size:25px;font-weight:400;margin:18px 0 2px}
+p.sub{color:var(--muted);font-size:13.5px;line-height:1.5;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
 .eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.14em;font-weight:800;color:var(--muted)}
-.empty{padding:44px 20px;text-align:center;color:var(--muted);font-size:14px}
+.empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:14px}
 .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:5px;font-weight:700}
-input[type=text],input[type=number],input[type=password],select.f,select,textarea{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;background:#fff}
-input:focus,select:focus,textarea:focus{outline:2px solid var(--fresa);outline-offset:-1px;border-color:transparent}
-.search{flex:1;min-width:160px}
-.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+input[type=text],input[type=number],input[type=password],select{
+  border:1px solid var(--line);border-radius:11px;padding:12px;background:#fff;
+}
+input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;border-color:transparent}
+
+.btn{background:var(--fresa);color:#fff;border-radius:12px;padding:14px 18px;font-weight:700;font-size:15px}
+.btn:active{background:var(--fresa-dark)}
+.btn:disabled{opacity:.4}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn.ghost:active{background:var(--cream)}
+.btn.dark{background:var(--ink);color:#fff}
+.btn.sm{padding:9px 13px;font-size:13px;border-radius:10px}
+.btn.wide{width:100%}
+
+/* Barra pegajosa de búsqueda + categorías */
+.sticky{position:sticky;top:calc(56px + env(safe-area-inset-top,0px));z-index:30;background:var(--cream);padding:8px 0 6px;margin:0 -14px;padding-left:14px;padding-right:14px}
+.searchbar{width:100%;padding:12px 14px;border-radius:12px}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-top:8px;padding-bottom:2px}
 .chips::-webkit-scrollbar{display:none}
-.chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:8px 14px;font-size:12.5px;font-weight:700;color:var(--muted);white-space:nowrap;flex:none}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 
-.flow{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:18px;flex-wrap:wrap}
-.flow span{background:#fff;border:1px solid var(--line);border-radius:20px;padding:5px 12px}
-.flow span.hi{background:var(--ink);color:#fff;border-color:var(--ink)}
-.flow i{color:#D9C2C7;font-style:normal}
+/* ===== Tarjeta de insumo (reemplaza la tabla) ===== */
+.seccion{font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:800;color:var(--muted);margin:18px 0 8px;padding-left:2px}
+.ic{
+  background:#fff;border:1px solid var(--line);border-left:4px solid var(--line);
+  border-radius:12px;padding:12px 12px 12px 14px;margin-bottom:8px;
+  display:flex;align-items:center;gap:10px;box-shadow:var(--shadow);
+}
+.ic.out{border-left-color:var(--fresa)}
+.ic.low{border-left-color:var(--amber)}
+.ic.ok{border-left-color:var(--leaf)}
+.ic .txt{flex:1;min-width:0}
+.ic .nm{font-weight:700;font-size:15px;line-height:1.25;word-break:break-word}
+.ic .meta{font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ic .flag{font-size:11px;font-weight:700;margin-top:4px;line-height:1.35}
+.ic .flag.amb{color:var(--amber)}
+.ic .flag.red{color:var(--fresa)}
+.pill{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.pill.ok{background:#E6F4EC;color:var(--leaf)}
+.pill.low{background:#FDF1DF;color:var(--amber)}
+.pill.out{background:#FCE7EB;color:var(--fresa-dark)}
+.pill.sug{background:#EEF4F8;color:var(--azul)}
 
-.tbl{width:100%;border-collapse:collapse}
-.tbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;padding:11px 12px;border-bottom:1px solid var(--line)}
-.tbl td{padding:11px 12px;border-bottom:1px solid #FAEDEF;font-size:14px;vertical-align:middle}
-.tbl tr:last-child td{border-bottom:none}
-.tbl tbody tr:hover{background:#FFFAF9}
-.nm{font-weight:600}
-.cat{font-size:11px;color:var(--muted)}
-.u{color:var(--muted);font-weight:400;font-size:12px}
-.stepper{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
-.stepper button{width:30px;height:32px;font-size:16px;font-weight:700;color:var(--muted)}
-.stepper button:hover{background:var(--cream);color:var(--fresa)}
-.stepper input{width:58px;height:32px;border:none;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:14px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
-.stepper input:focus{outline:none;background:#FFF3F5}
-.tag{display:inline-block;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
-.tag.ok{background:#E6F4EC;color:var(--leaf)}
-.tag.low{background:#FDF1DF;color:var(--amber)}
-.tag.out{background:#FCE7EB;color:var(--fresa-dark)}
-.tag.na{background:#F1EBEC;color:var(--muted)}
-.bar{height:5px;border-radius:3px;background:#F5E5E8;overflow:hidden;width:70px;margin-top:5px}
-.bar i{display:block;height:100%;border-radius:3px}
+/* Stepper grande, para el pulgar */
+.st2{display:flex;align-items:center;gap:0;flex:none}
+.st2 button{
+  width:42px;height:42px;border:1px solid var(--line);background:#fff;
+  font-size:21px;font-weight:700;color:var(--fresa);
+  display:flex;align-items:center;justify-content:center;
+}
+.st2 button:first-child{border-radius:11px 0 0 11px}
+.st2 button:last-child{border-radius:0 11px 11px 0}
+.st2 button:active{background:var(--cream)}
+.st2 input{
+  width:58px;height:42px;border:1px solid var(--line);border-left:none;border-right:none;
+  text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:16px;
+  border-radius:0;padding:0;
+}
+.st2 input:focus{outline:none;background:#FFF3F5}
+.st2.tiene input{background:#FFF3F5;color:var(--fresa)}
 
-.comanda{background:#fff;border-radius:4px;position:relative;box-shadow:var(--shadow);border:1px solid var(--line)}
-.comanda:before,.comanda:after{content:"";position:absolute;left:0;right:0;height:9px;background:radial-gradient(circle at 5px 0, transparent 5px, #fff 5px);background-size:12px 9px}
-.comanda:before{top:-8px;transform:rotate(180deg)}
-.comanda:after{bottom:-8px}
-.comanda .top{padding:18px 20px 14px;border-bottom:2px dashed var(--line);text-align:center}
-.comanda .top h3{font-family:'Instrument Serif',serif;font-size:22px;font-weight:400}
-.comanda .top .meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.08em}
-.comanda .body{padding:6px 20px;max-height:420px;overflow:auto}
-.cl{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px dotted var(--line)}
+/* ===== Comanda: barra flotante + hoja ===== */
+.cbar{
+  position:fixed;left:0;right:0;bottom:calc(60px + var(--safe-b));z-index:44;
+  background:var(--ink);color:#fff;padding:12px 14px;
+  display:flex;align-items:center;gap:12px;
+  box-shadow:0 -6px 24px -10px rgba(0,0,0,.5);
+}
+.cbar .inner{max-width:760px;margin:0 auto;width:100%;display:flex;align-items:center;gap:12px}
+.cbar .info{flex:1;min-width:0}
+.cbar .info b{display:block;font-size:14px}
+.cbar .info span{font-size:11.5px;color:#C8B3B8}
+.cbar .btn{padding:11px 16px;font-size:14px}
+
+.sheet{position:fixed;inset:0;z-index:60;display:none}
+.sheet.on{display:block}
+.sheet .bg{position:absolute;inset:0;background:rgba(43,26,31,.5)}
+.sheet .panel{
+  position:absolute;left:0;right:0;bottom:0;background:#fff;
+  border-radius:20px 20px 0 0;max-height:88dvh;display:flex;flex-direction:column;
+  padding-bottom:var(--safe-b);
+}
+.sheet .grab{width:38px;height:4px;background:var(--line);border-radius:2px;margin:10px auto 4px}
+.sheet .shead{padding:8px 18px 12px;border-bottom:2px dashed var(--line);text-align:center}
+.sheet .shead h3{font-family:'Instrument Serif',serif;font-size:21px;font-weight:400}
+.sheet .shead .m{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.08em}
+.sheet .sbody{overflow:auto;padding:4px 18px;flex:1}
+.cl{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px dotted var(--line)}
 .cl:last-child{border-bottom:none}
-.cl .info{flex:1;min-width:0}
-.cl .info b{display:block;font-size:14px;font-weight:600}
-.cl .info span{font-size:11px;color:var(--muted)}
-.cl .x{color:#CFB6BC;font-size:18px;padding:0 4px}
-.cl .x:hover{color:var(--fresa)}
-.comanda .foot{padding:16px 20px;border-top:2px dashed var(--line);background:#FFFBFA;border-radius:0 0 4px 4px}
-.warnflag{font-size:10px;color:var(--amber);font-weight:700;margin-top:2px}
-.stockflag{font-size:10px;color:var(--fresa);font-weight:700;margin-top:2px}
+.cl .i{flex:1;min-width:0}
+.cl .i b{display:block;font-size:14.5px;font-weight:600}
+.cl .i span{font-size:11px;color:var(--muted)}
+.cl .x{color:#CFB6BC;font-size:22px;padding:4px 8px}
+.sheet .sfoot{padding:14px 18px;border-top:2px dashed var(--line);background:#FFFBFA}
 
-.ped{padding:16px 18px;margin-bottom:12px}
-.ped .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* ===== Pedidos ===== */
+.ped{padding:14px;margin-bottom:10px}
+.ped .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .ped .hd b{font-size:15px}
 .ped .hd .mono{font-size:11px;color:var(--muted)}
-.st{padding:4px 9px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
-.st.enviado{background:#FDF1DF;color:var(--amber)}
-.st.aprobado{background:#E4F1F7;color:#1F6B8C}
-.st.surtido,.st.recibido{background:#E6F4EC;color:var(--leaf)}
-.st.cancelado{background:#F1EBEC;color:var(--muted)}
-.lines{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;max-height:460px;overflow:auto}
-.pl{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dotted #F5E5E8;font-size:14px}
+.stt{padding:4px 9px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.stt.enviado{background:#FDF1DF;color:var(--amber)}
+.stt.aprobado{background:#E4F1F7;color:var(--azul)}
+.stt.surtido,.stt.recibido{background:#E6F4EC;color:var(--leaf)}
+.stt.cancelado{background:#F1EBEC;color:var(--muted)}
+.lines{margin-top:10px;border-top:1px solid var(--line);padding-top:6px;max-height:340px;overflow:auto}
+.pl{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px dotted #F5E5E8;font-size:14px}
 .pl:last-child{border-bottom:none}
-.pl .n{flex:1;min-width:0;font-weight:600}
-.provhead{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1F6B8C;padding:10px 0 4px;border-top:1px dashed var(--line);margin-top:6px}
+.pl .n{flex:1;min-width:0;font-weight:600;line-height:1.3}
+.pl input{width:64px;padding:8px;text-align:center}
+.provhead{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--azul);padding:10px 0 2px;border-top:1px dashed var(--line);margin-top:6px}
+.acciones{display:flex;gap:8px;width:100%;margin-top:10px}
+.acciones .btn{flex:1}
 
-.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
-.kpi{padding:16px 18px}
-.kpi .k{font-family:'Instrument Serif',serif;font-size:32px;line-height:1.1;margin-top:2px}
+/* ===== Panel ===== */
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.kpi{padding:14px}
+.kpi .k{font-family:'Instrument Serif',serif;font-size:30px;line-height:1.1;margin-top:2px}
 .kpi .k.red{color:var(--fresa)}
-.focos{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.7}
+.kpi.full{grid-column:1 / -1}
+.focos{margin-top:7px;font-size:12.5px;color:var(--muted);line-height:1.7}
 .focos b{color:var(--ink)}
-.moves{max-height:520px;overflow:auto}
-.mv{display:flex;gap:10px;padding:10px 12px;border-bottom:1px solid #FAEDEF;font-size:13px;align-items:baseline}
+.mv{display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid #FAEDEF;font-size:13.5px;align-items:baseline}
+.mv:last-child{border-bottom:none}
 .mv .t{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap}
-.mv .d{flex:1}
+.mv .d{flex:1;line-height:1.35}
 .mv .q{font-family:'IBM Plex Mono',monospace;font-weight:700}
 .mv .q.up{color:var(--leaf)}
 .mv .q.dn{color:var(--fresa)}
 
-#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,120%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:11px;font-size:14px;font-weight:600;z-index:200;transition:transform .28s cubic-bezier(.2,.8,.2,1);box-shadow:0 10px 30px -10px rgba(0,0,0,.5);max-width:88vw;text-align:center}
-#toast.on{transform:translate(-50%,0)}
+/* Catálogo: campos apilados */
+.ce{margin-bottom:10px;padding:12px}
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.cgrid label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;color:var(--muted);display:block;margin-bottom:4px}
+.cgrid input{width:100%;padding:9px}
+.cgrid .niv{background:#FFFAF9}
+
+#toast{
+  position:fixed;left:14px;right:14px;bottom:calc(130px + var(--safe-b));
+  background:var(--ink);color:#fff;padding:14px 18px;border-radius:13px;
+  font-size:14px;font-weight:600;z-index:80;
+  box-shadow:0 10px 30px -10px rgba(0,0,0,.5);text-align:center;max-width:520px;margin:0 auto;
+  opacity:0;visibility:hidden;pointer-events:none;transform:translateY(14px);
+  transition:opacity .22s ease, transform .28s cubic-bezier(.2,.8,.2,1), visibility 0s linear .3s;
+}
+#toast.on{opacity:1;visibility:visible;transform:translateY(0);transition-delay:0s}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-@media(max-width:640px){.hide-sm{display:none} h2.page{font-size:24px} .ctx{width:100%;margin-left:0}}
+
+/* Pantalla grande: dos columnas y menú más ancho */
+@media(min-width:820px){
+  .wrap{max-width:900px}
+  .kpis{grid-template-columns:repeat(3,1fr)}
+  .cgrid{grid-template-columns:repeat(4,1fr)}
+  .tabbar{justify-content:center;gap:6px}
+  .tabbar button{flex:0 0 110px}
+}
 </style>
 </head>
 <body>
@@ -168,12 +251,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--fresa);outline-o
 <!-- ===== Login ===== -->
 <div id="login">
   <div class="loginbox">
-    <div class="logo">🍓 Lady <em>Fresa</em></div>
+    <div class="big">🍓 Lady <em>Fresa</em></div>
     <div class="sublog">Inventario y requerimientos</div>
     <div class="card">
-      <label for="lg-suc">¿Dónde estás?</label>
+      <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
-      <label for="lg-pin">Tu PIN</label>
+      <span class="lbl">Tu PIN</span>
       <input type="password" id="lg-pin" inputmode="numeric" maxlength="6" placeholder="••••" onkeydown="if(event.key==='Enter')entrar()">
       <div class="loginerr" id="lg-err"></div>
       <button class="btn wide" onclick="entrar()">Entrar</button>
@@ -184,27 +267,44 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--fresa);outline-o
 <!-- ===== App ===== -->
 <div id="shell" style="display:none">
   <header>
-    <div class="wrap">
-      <div class="brandrow">
-        <div class="logo">🍓 Lady <em>Fresa</em></div>
-        <div class="ctx">
-          <span id="ctxslot"></span>
-          <button class="sync" onclick="sincronizar()"><span class="dot" id="dot"></span><span id="synctxt">Sincronizado</span></button>
-          <button class="salir" onclick="salir()">Salir</button>
-        </div>
+    <div class="hrow">
+      <div class="brand">🍓 <em>Lady Fresa</em></div>
+      <div class="hright">
+        <span id="ctxslot"></span>
+        <button class="iconbtn" onclick="sincronizar()" aria-label="Sincronizar"><span class="dot" id="dot"></span></button>
+        <button class="iconbtn" onclick="salir()">Salir</button>
       </div>
-      <nav id="nav"></nav>
     </div>
   </header>
   <div class="wrap" id="app"></div>
+  <div id="cbarslot"></div>
+  <nav class="tabbar" id="nav"></nav>
 </div>
+
+<!-- ===== Hoja de la comanda ===== -->
+<div class="sheet" id="sheet">
+  <div class="bg" onclick="cerrarSheet()"></div>
+  <div class="panel">
+    <div class="grab"></div>
+    <div class="shead">
+      <h3 id="sh-title">Comanda de pedido</h3>
+      <div class="m" id="sh-meta"></div>
+    </div>
+    <div class="sbody" id="sh-body"></div>
+    <div class="sfoot">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <span class="eyebrow">Costo estimado</span>
+        <span class="mono" style="font-weight:700;font-size:17px" id="sh-total">$0.00</span>
+      </div>
+      <button class="btn wide" id="sh-send" onclick="enviarPedido()">Enviar pedido</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
-/* ============ Supabase ============
-   Proyecto Lady Fresa Pos · tablas lfi_*
-   Flujo: Proveedor -> Comisariato -> Tiendas
-=================================== */
+/* ===== Supabase ===== */
 const SB_URL = 'https://ngpumyxxxlafuzcsaepy.supabase.co';
 const SB_KEY = 'sb_publishable_6Kma0iIJ6mFCK1A7YTDnRw_HKqxsLQv';
 const db = window.supabase.createClient(SB_URL, SB_KEY);
@@ -217,9 +317,7 @@ const LOCS = {
 };
 
 let CAT=[], INV={}, NIV={}, MOV=[], REQ=[], draft={};
-let sesion = null;          // {sucursal, rol}
-let who = 'moctezuma';      // sucursal que se está viendo
-let tab='inv', q='', filtroCat='', cargando=false;
+let sesion=null, who='moctezuma', tab='inv', q='', filtroCat='', cargando=false;
 
 const hoy = () => new Date().toISOString().slice(0,10);
 const money = n => '$' + (Math.round(n*100)/100).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -227,38 +325,36 @@ const item = id => CAT.find(i => i.id === id);
 const stock = (loc,id) => (INV[loc] && INV[loc][id]) || 0;
 const isDir = () => sesion && sesion.rol === 'direccion';
 const verCentro = () => who === 'centro';
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 
 const nivel = (loc,id) => {
-  const it = item(id); if (!it) return {min:0, par:0};
+  const it = item(id); if (!it) return {min:0,par:0};
   if (loc === 'centro') return {min:Number(it.min_com), par:Number(it.par_com)};
   const n = NIV[loc] && NIV[loc][id];
   return {min: n ? Number(n.min_nivel) : 0, par: n ? Number(n.par_nivel) : 0};
 };
-
 function estado(loc,id){
   const {min,par} = nivel(loc,id);
-  if (par === 0) return 'na';                  // insumo que esa tienda no maneja
+  if (par === 0) return 'na';
   const s = stock(loc,id);
   if (s <= 0) return 'out';
   if (s <= min) return 'low';
   return 'ok';
 }
-const etiqueta = e => e==='out'?'Agotado' : e==='low'?'Bajo' : e==='na'?'No aplica' : 'OK';
-
+const etiqueta = e => e==='out'?'Agotado' : e==='low'?'Bajo' : e==='na'?'—' : 'OK';
 function comprometido(id){
-  return REQ.filter(r => r.tipo==='tienda' && (r.estado==='enviado' || r.estado==='aprobado'))
+  return REQ.filter(r => r.tipo==='tienda' && ['enviado','aprobado'].includes(r.estado))
     .reduce((a,r) => { const l = r.lineas.find(x => x.insumo_id === id); return a + (l ? Number(l.aprob||0) : 0); }, 0);
 }
-const disponibleReal = id => stock('centro',id) - comprometido(id);
+const dispReal = id => stock('centro',id) - comprometido(id);
 const sugerir = (loc,i) => loc === 'centro'
-  ? Math.max(0, Number(i.par_com) - disponibleReal(i.id))
+  ? Math.max(0, Number(i.par_com) - dispReal(i.id))
   : Math.max(0, nivel(loc,i.id).par - stock(loc,i.id));
 
-/* ============ Login ============ */
-function pintarLogin(){
-  document.getElementById('lg-suc').innerHTML = Object.keys(LOCS)
-    .map(l => `<option value="${l}">${LOCS[l].n}</option>`).join('');
-}
+/* ===== Login ===== */
+document.getElementById('lg-suc').innerHTML = Object.keys(LOCS)
+  .map(l => `<option value="${l}">${LOCS[l].n}</option>`).join('');
+
 async function entrar(){
   const suc = document.getElementById('lg-suc').value;
   const pin = document.getElementById('lg-pin').value.trim();
@@ -274,8 +370,7 @@ async function entrar(){
   await arrancar();
 }
 function salir(){
-  sessionStorage.removeItem('lfi_sesion');
-  sesion = null;
+  sessionStorage.removeItem('lfi_sesion'); sesion = null;
   document.getElementById('shell').style.display = 'none';
   document.getElementById('login').style.display = 'flex';
   document.getElementById('lg-pin').value = '';
@@ -287,30 +382,24 @@ async function arrancar(){
   await cargar(); render();
 }
 
-/* ============ Carga ============ */
-function setDot(e, txt){
-  const d = document.getElementById('dot'), t = document.getElementById('synctxt');
-  if (!d) return;
-  d.className = 'dot' + (e ? ' ' + e : '');
-  t.textContent = txt;
-}
+/* ===== Carga ===== */
+function setDot(e){ const d = document.getElementById('dot'); if (d) d.className = 'dot' + (e ? ' '+e : ''); }
 
 async function cargar(silencioso){
   if (cargando) return;
   cargando = true;
-  if (!silencioso) setDot('busy','Sincronizando…');
+  if (!silencioso) setDot('busy');
   try{
-    const [ins, stk, niv, peds, lins, movs] = await Promise.all([
+    const [ins,stk,niv,peds,lins,movs] = await Promise.all([
       db.from('lfi_insumos').select('*').eq('activo',true).order('categoria').order('nombre'),
       db.from('lfi_stock').select('*'),
       db.from('lfi_niveles').select('*'),
-      db.from('lfi_pedidos').select('*').order('created_at',{ascending:false}).limit(60),
+      db.from('lfi_pedidos').select('*').order('created_at',{ascending:false}).limit(50),
       db.from('lfi_pedido_lineas').select('*'),
-      db.from('lfi_movimientos').select('*').eq('sucursal',who).order('created_at',{ascending:false}).limit(200),
+      db.from('lfi_movimientos').select('*').eq('sucursal',who).order('created_at',{ascending:false}).limit(150),
     ]);
     const bad = [ins,stk,niv,peds,lins,movs].find(r => r.error);
     if (bad) throw bad.error;
-
     CAT = ins.data;
     INV = {}; NIV = {};
     Object.keys(LOCS).forEach(l => { INV[l] = {}; NIV[l] = {}; });
@@ -318,274 +407,232 @@ async function cargar(silencioso){
     niv.data.forEach(n => { if (NIV[n.sucursal]) NIV[n.sucursal][n.insumo_id] = n; });
     REQ = peds.data.map(p => ({...p, lineas: lins.data.filter(l => l.pedido_id === p.id)}));
     MOV = movs.data;
-    setDot('', 'Sincronizado');
+    setDot('');
   } catch(e){
-    console.error(e);
-    setDot('err','Sin conexión');
-    toast('No se pudo conectar con la base de datos.');
+    console.error(e); setDot('err'); toast('Sin conexión con la base de datos.');
   }
   cargando = false;
 }
-async function sincronizar(){ await cargar(); render(); }
+async function sincronizar(){ await cargar(); render(); toast('Actualizado'); }
 
-/* ============ Acciones ============ */
-async function ajustar(loc, id, val){
+/* ===== Acciones ===== */
+async function ajustar(loc,id,val){
   const nueva = Math.max(0, Number(val)||0);
   if (nueva === stock(loc,id)) return;
   INV[loc][id] = nueva; render();
-  setDot('busy','Guardando…');
+  setDot('busy');
   const { error } = await db.rpc('lfi_ajustar', {p_suc:loc, p_insumo:id, p_nueva:nueva, p_por:LOCS[sesion.sucursal].short});
-  if (error) toast('No se guardó el ajuste. Revisa tu conexión.');
+  if (error) toast('No se guardó. Revisa tu internet.');
   await cargar(true); render();
 }
-
-function addDraft(id, cant){
-  const c = Math.max(0, Number(cant)||0);
-  if (c === 0) delete draft[id]; else draft[id] = c;
+function addDraft(id,c){
+  const v = Math.max(0, Number(c)||0);
+  if (v === 0) delete draft[id]; else draft[id] = v;
   render();
 }
-
 function autollenar(){
   draft = {};
   CAT.forEach(i => { const s = sugerir(who,i); if (s > 0) draft[i.id] = s; });
-  const hay = Object.keys(draft).length;
-  if (verCentro()) toast(hay ? 'Orden llenada: reponer par + cubrir pedidos pendientes' : 'El comisariato está surtido. No hace falta comprar.');
-  else toast(hay ? 'Requerimiento llenado con lo que te falta para el nivel par' : 'Todo está en nivel par. No hace falta pedir nada.');
+  const n = Object.keys(draft).length;
+  toast(n ? `Se llenaron ${n} insumos con lo que te falta` : 'Todo está en nivel. No hace falta pedir nada.');
   render();
+  if (n) abrirSheet();
 }
-
 async function enviarPedido(){
   const lineas = Object.entries(draft).filter(([,c]) => c > 0);
   if (!lineas.length) return;
   const tipo = verCentro() ? 'compra' : 'tienda';
-  setDot('busy','Enviando…');
+  cerrarSheet(); setDot('busy');
   const { data:ped, error } = await db.from('lfi_pedidos')
     .insert({tipo, sucursal:who, fecha:hoy(), estado: tipo==='compra' ? 'aprobado' : 'enviado'})
     .select().single();
-  if (error){ toast('No se pudo enviar el pedido.'); setDot('err','Error'); return; }
+  if (error){ toast('No se pudo enviar el pedido.'); setDot('err'); return; }
   const { error:e2 } = await db.from('lfi_pedido_lineas')
     .insert(lineas.map(([id,c]) => ({pedido_id:ped.id, insumo_id:id, cant:c, aprob:c})));
   if (e2) toast('El pedido se creó pero fallaron las líneas.');
   draft = {};
-  toast(tipo === 'compra' ? 'Orden de compra generada' : 'Pedido enviado al comisariato');
+  toast(tipo === 'compra' ? 'Orden de compra generada' : '✅ Pedido enviado al comisariato');
   tab = tipo === 'compra' ? 'com' : 'ped';
   await cargar(true); render();
 }
-
-async function setEstado(rid, est){
-  setDot('busy','Guardando…');
+async function setEstado(rid,est){
+  setDot('busy');
   const { error } = await db.from('lfi_pedidos').update({estado:est}).eq('id',rid);
-  toast(error ? 'No se pudo actualizar el pedido.' : (est==='aprobado' ? 'Pedido aprobado' : 'Pedido cancelado'));
+  toast(error ? 'No se pudo actualizar.' : (est==='aprobado' ? 'Pedido aprobado' : 'Pedido cancelado'));
   await cargar(true); render();
 }
-async function setLinea(lid, val){
-  setDot('busy','Guardando…');
+async function setLinea(lid,val){
+  setDot('busy');
   await db.from('lfi_pedido_lineas').update({aprob: Math.max(0, Number(val)||0)}).eq('id',lid);
   await cargar(true); render();
 }
 async function surtir(rid){
-  setDot('busy','Surtiendo…');
+  setDot('busy');
   const { error } = await db.rpc('lfi_surtir', {p_pedido:rid, p_por:LOCS[sesion.sucursal].short});
-  toast(error ? 'No se pudo surtir: ' + error.message : 'Pedido surtido. Inventarios actualizados.');
+  toast(error ? 'No se pudo surtir: '+error.message : 'Surtido. Inventarios actualizados.');
   await cargar(true); render();
 }
 async function recibir(rid){
-  setDot('busy','Recibiendo…');
+  setDot('busy');
   const { error } = await db.rpc('lfi_recibir', {p_pedido:rid, p_por:LOCS[sesion.sucursal].short});
-  toast(error ? 'No se pudo recibir: ' + error.message : 'Mercancía recibida.');
+  toast(error ? 'No se pudo recibir: '+error.message : 'Mercancía recibida.');
   await cargar(true); render();
 }
-
-async function nuevoInsumo(){
-  const v = id => document.getElementById(id).value;
-  const nombre = v('ni-nombre').trim();
-  if (!nombre){ toast('Ponle nombre al insumo'); return; }
-  setDot('busy','Guardando…');
-  const { error } = await db.from('lfi_insumos').insert({
-    nombre, categoria:v('ni-cat')||'General', unidad:v('ni-uni')||'pza',
-    costo:Number(v('ni-costo'))||0, proveedor:v('ni-prov')||null,
-    min_com:Number(v('ni-minc'))||0, par_com:Number(v('ni-parc'))||0,
-  });
-  toast(error ? 'No se pudo agregar el insumo.' : nombre + ' agregado. Ponle su nivel par en cada tienda.');
-  await cargar(true); render();
+async function editarInsumo(id,campo,val){
+  const num = !['nombre','categoria','unidad','proveedor'].includes(campo);
+  const patch = {}; patch[campo] = num ? (Number(val)||0) : val;
+  const it = item(id); if (it) it[campo] = patch[campo];
+  setDot('busy');
+  const { error } = await db.from('lfi_insumos').update(patch).eq('id',id);
+  setDot(error ? 'err' : '');
+  if (error) toast('No se guardó el cambio.');
+}
+async function editarNivel(loc,id,campo,val){
+  const n = nivel(loc,id);
+  const fila = {sucursal:loc, insumo_id:id, min_nivel:n.min, par_nivel:n.par};
+  fila[campo] = Math.max(0, Number(val)||0);
+  setDot('busy');
+  const { error } = await db.from('lfi_niveles').upsert(fila, {onConflict:'sucursal,insumo_id'});
+  if (error){ setDot('err'); toast('No se guardó el nivel.'); return; }
+  if (!NIV[loc][id]) NIV[loc][id] = fila; else NIV[loc][id][campo] = fila[campo];
+  setDot('');
 }
 async function borrarInsumo(id){
-  setDot('busy','Guardando…');
+  setDot('busy');
   await db.from('lfi_insumos').update({activo:false}).eq('id',id);
   toast('Insumo dado de baja');
   await cargar(true); render();
 }
-async function editarInsumo(id, campo, val){
-  const num = !['nombre','categoria','unidad','proveedor'].includes(campo);
-  const patch = {}; patch[campo] = num ? (Number(val)||0) : val;
-  const it = item(id); if (it) it[campo] = patch[campo];
-  setDot('busy','Guardando…');
-  const { error } = await db.from('lfi_insumos').update(patch).eq('id',id);
-  setDot(error ? 'err' : '', error ? 'Sin guardar' : 'Sincronizado');
-}
-async function editarNivel(loc, id, campo, val){
-  const n = nivel(loc,id);
-  const fila = {sucursal:loc, insumo_id:id, min_nivel:n.min, par_nivel:n.par};
-  fila[campo] = Math.max(0, Number(val)||0);
-  setDot('busy','Guardando…');
-  const { error } = await db.from('lfi_niveles').upsert(fila, {onConflict:'sucursal,insumo_id'});
-  if (error){ setDot('err','Sin guardar'); toast('No se guardó el nivel.'); return; }
-  if (!NIV[loc][id]) NIV[loc][id] = fila; else NIV[loc][id][campo] = fila[campo];
-  setDot('','Sincronizado');
+
+/* ===== Hoja de comanda ===== */
+function abrirSheet(){ pintarSheet(); document.getElementById('sheet').classList.add('on'); }
+function cerrarSheet(){ document.getElementById('sheet').classList.remove('on'); }
+function pintarSheet(){
+  const dir = verCentro();
+  const lineas = Object.entries(draft).filter(([,c]) => c > 0);
+  const total = lineas.reduce((a,[id,c]) => a + c * Number(item(id).costo), 0);
+  document.getElementById('sh-title').textContent = dir ? 'Orden de compra' : 'Comanda de pedido';
+  document.getElementById('sh-meta').textContent = (dir ? 'Comisariato → proveedores' : LOCS[who].short + ' → comisariato') + ' · ' + hoy();
+  document.getElementById('sh-total').textContent = money(total);
+  document.getElementById('sh-send').textContent = dir ? 'Generar orden' : 'Enviar pedido';
+  document.getElementById('sh-body').innerHTML = lineas.length ? lineas.map(([id,c]) => {
+    const i = item(id);
+    return `<div class="cl">
+      <div class="i"><b>${esc(i.nombre)}</b><span>${dir ? esc(i.proveedor||'Sin proveedor') : 'Del comisariato'}</span></div>
+      <span class="mono" style="font-weight:700">${c} <span style="color:var(--muted);font-size:12px">${esc(i.unidad)}</span></span>
+      <button class="x" onclick="addDraft('${id}',0);pintarSheet()" aria-label="Quitar">×</button>
+    </div>`;
+  }).join('') : '<div class="empty"><b>Comanda vacía</b>Marca cantidades en la lista.</div>';
 }
 
-/* ============ Vistas ============ */
+/* ===== Piezas de UI ===== */
 const cats = () => [...new Set(CAT.map(i => i.categoria))];
-function filtra(soloActivos){
+function filtra(soloDeLaTienda){
   return CAT.filter(i => {
     if (filtroCat && i.categoria !== filtroCat) return false;
     if (q && !(i.nombre + ' ' + i.categoria + ' ' + (i.proveedor||'')).toLowerCase().includes(q.toLowerCase())) return false;
-    if (soloActivos && nivel(who,i.id).par === 0 && !stock(who,i.id)) return false;   // esa tienda no lo maneja
+    if (soloDeLaTienda && !verCentro() && nivel(who,i.id).par === 0 && !stock(who,i.id)) return false;
     return true;
   });
 }
-const flowbar = hi => '<div class="flow">'
-  + '<span class="' + (hi==='p'?'hi':'') + '">Proveedores</span><i>&rarr;</i>'
-  + '<span class="' + (hi==='c'?'hi':'') + '">Comisariato</span><i>&rarr;</i>'
-  + '<span class="' + (hi==='t'?'hi':'') + '">Tiendas</span></div>';
-const buscador = extra => `<input type="text" class="search" ${extra||''} placeholder="Buscar insumo…" value="${q}" oninput="q=this.value;render();this.focus();this.setSelectionRange(this.value.length,this.value.length)">`;
-const chips = () => `<div class="chips" style="margin-bottom:12px">
-  <button class="chip ${filtroCat===''?'on':''}" onclick="filtroCat='';render()">Todas</button>
-  ${cats().map(c => `<button class="chip ${filtroCat===c?'on':''}" onclick="filtroCat='${c}';render()">${c}</button>`).join('')}
+const barra = () => `<div class="sticky">
+  <input type="text" class="searchbar" placeholder="Buscar insumo…" value="${esc(q)}"
+    oninput="q=this.value;render();const el=document.querySelector('.searchbar');el.focus();el.setSelectionRange(el.value.length,el.value.length)">
+  <div class="chips">
+    <button class="chip ${filtroCat===''?'on':''}" onclick="filtroCat='';render()">Todas</button>
+    ${cats().map(c => `<button class="chip ${filtroCat===c?'on':''}" onclick="filtroCat='${esc(c)}';render()">${esc(c)}</button>`).join('')}
+  </div>
 </div>`;
 
-function vInventario(){
-  const loc = who, lista = filtra(true);
-  const valor = lista.reduce((a,i) => a + stock(loc,i.id) * Number(i.costo), 0);
-  const bajos = CAT.filter(i => ['out','low'].includes(estado(loc,i.id))).length;
-  const sinCosto = CAT.filter(i => Number(i.costo) === 0).length;
-
-  let rows = '';
-  for (const c of cats()){
-    const items = lista.filter(i => i.categoria === c);
-    if (!items.length) continue;
-    rows += `<tr><td colspan="5" style="background:#FFFAF9;padding:8px 12px"><span class="eyebrow">${c}</span></td></tr>`;
-    for (const i of items){
-      const s = stock(loc,i.id), e = estado(loc,i.id), {min,par} = nivel(loc,i.id);
-      const pct = Math.min(100, par ? (s/par)*100 : 0);
-      const color = e==='out' ? 'var(--fresa)' : e==='low' ? 'var(--amber)' : 'var(--leaf)';
-      const comp = verCentro() ? comprometido(i.id) : 0;
-      rows += `<tr>
-        <td><div class="nm">${i.nombre}</div>
-          <div class="bar"><i style="width:${pct}%;background:${color}"></i></div>
-          ${comp ? `<div class="warnflag">${comp} ${i.unidad} apartados para tiendas</div>` : ''}</td>
-        <td class="hide-sm cat">${verCentro() ? (i.proveedor||'—') : 'Del comisariato'}</td>
-        <td>
-          <div class="stepper">
-            <button onclick="ajustar('${loc}','${i.id}',${s-1})" aria-label="Restar uno">−</button>
-            <input type="number" value="${s}" onchange="ajustar('${loc}','${i.id}',this.value)">
-            <button onclick="ajustar('${loc}','${i.id}',${s+1})" aria-label="Sumar uno">+</button>
-          </div><span class="u"> ${i.unidad}</span>
-        </td>
-        <td class="hide-sm mono" style="color:var(--muted);font-size:12px">mín ${min} · par ${par}</td>
-        <td><span class="tag ${e}">${etiqueta(e)}</span></td>
-      </tr>`;
-    }
-  }
-
-  return `<h2 class="page">Inventario · ${LOCS[loc].n}</h2>
-  <p class="sub">Cuenta lo que hay físicamente. Cada cambio se guarda en la base y queda registrado en movimientos.</p>
-  ${flowbar(verCentro()?'c':'t')}
-  <div class="grid3" style="margin-bottom:16px">
-    <div class="card kpi"><span class="eyebrow">Valor del inventario</span><div class="k">${money(valor)}</div>
-      ${sinCosto ? `<div class="focos">Faltan costos en <b>${sinCosto}</b> insumos</div>` : ''}</div>
-    <div class="card kpi"><span class="eyebrow">Insumos por resurtir</span><div class="k ${bajos?'red':''}">${bajos}</div></div>
-    <div class="card kpi"><span class="eyebrow">Insumos que maneja</span><div class="k">${CAT.filter(i => nivel(loc,i.id).par > 0).length}</div></div>
-  </div>
-  <div class="row" style="margin-bottom:12px">
-    ${buscador()}
-    <button class="btn ghost" onclick="tab='req';q='';render()">${verCentro() ? 'Comprar a proveedor' : 'Hacer requerimiento'}</button>
-  </div>
-  ${chips()}
-  <div class="card" style="overflow:hidden">
-    <table class="tbl">
-      <thead><tr><th>Insumo</th><th class="hide-sm">${verCentro()?'Proveedor':'Se surte de'}</th><th>En existencia</th><th class="hide-sm">Niveles</th><th>Estado</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="5" class="empty">Sin resultados.</td></tr>'}</tbody>
-    </table>
+function stepper(v, fnMenos, fnMas, fnSet, tiene){
+  return `<div class="st2 ${tiene?'tiene':''}">
+    <button onclick="${fnMenos}" aria-label="Restar">−</button>
+    <input type="number" inputmode="numeric" value="${v}" onchange="${fnSet}">
+    <button onclick="${fnMas}" aria-label="Sumar">+</button>
   </div>`;
 }
 
+/* ===== Vistas ===== */
+function vInventario(){
+  const loc = who, lista = filtra(true);
+  const bajos = CAT.filter(i => ['out','low'].includes(estado(loc,i.id))).length;
+  let html = '';
+  for (const c of cats()){
+    const items = lista.filter(i => i.categoria === c);
+    if (!items.length) continue;
+    html += `<div class="seccion">${esc(c)}</div>`;
+    for (const i of items){
+      const s = stock(loc,i.id), e = estado(loc,i.id), {min,par} = nivel(loc,i.id);
+      html += `<div class="ic ${e}">
+        <div class="txt">
+          <div class="nm">${esc(i.nombre)}</div>
+          <div class="meta">
+            <span class="pill ${e}">${etiqueta(e)}</span>
+            <span class="mono">mín ${min} · par ${par} ${esc(i.unidad)}</span>
+          </div>
+        </div>
+        ${stepper(s, `ajustar('${loc}','${i.id}',${s-1})`, `ajustar('${loc}','${i.id}',${s+1})`,
+                  `ajustar('${loc}','${i.id}',this.value)`, s>0)}
+      </div>`;
+    }
+  }
+  return `<h2 class="page">Inventario</h2>
+  <p class="sub">${LOCS[loc].n} · <b>${bajos}</b> ${bajos===1?'insumo':'insumos'} por resurtir. Cuenta lo que hay; se guarda solo.</p>
+  ${barra()}
+  ${html || '<div class="card empty"><b>Sin resultados</b>Prueba con otra búsqueda.</div>'}`;
+}
+
 function vRequerimiento(){
-  const dir = verCentro(), lista = filtra(!dir);
-  const lineas = Object.entries(draft).filter(([,c]) => c > 0);
-  const total = lineas.reduce((a,[id,c]) => a + c * Number(item(id).costo), 0);
-
-  const opciones = lista.map(i => {
-    const s = stock(who,i.id), e = estado(who,i.id), sug = sugerir(who,i), c = draft[i.id] || 0;
-    const {min} = nivel(who,i.id);
-    const exceso = !dir && c > sug + min && sug > 0;
-    const sinStock = !dir && c > 0 && c > disponibleReal(i.id);
-    return `<tr>
-      <td><div class="nm">${i.nombre}</div>
-        <div class="cat">${dir ? (i.proveedor||'Sin proveedor') : 'tienes ' + s + ' ' + i.unidad}</div>
-        ${exceso ? '<div class="warnflag">⚠ Más de lo que suele consumir</div>' : ''}
-        ${sinStock ? `<div class="stockflag">⚠ El comisariato solo tiene ${Math.max(0,disponibleReal(i.id))} disponible</div>` : ''}</td>
-      <td class="hide-sm"><span class="tag ${e}">${etiqueta(e)}</span></td>
-      <td class="hide-sm mono" style="font-size:12px;color:var(--muted)">${sug > 0 ? 'sugerido '+sug : '—'}</td>
-      <td><div class="stepper">
-        <button onclick="addDraft('${i.id}',${c-1})" aria-label="Restar uno">−</button>
-        <input type="number" value="${c}" onchange="addDraft('${i.id}',this.value)">
-        <button onclick="addDraft('${i.id}',${c+1})" aria-label="Sumar uno">+</button>
-      </div></td>
-    </tr>`;
-  }).join('');
-
-  const comanda = lineas.length ? lineas.map(([id,c]) => {
-    const i = item(id);
-    return `<div class="cl">
-      <div class="info"><b>${i.nombre}</b><span>${dir ? (i.proveedor||'Sin proveedor') : 'Del comisariato'}</span></div>
-      <span class="mono" style="font-weight:700">${c} <span class="u">${i.unidad}</span></span>
-      <button class="x" onclick="addDraft('${id}',0)" aria-label="Quitar">×</button>
-    </div>`;
-  }).join('') : '<div class="empty" style="padding:30px 10px"><b>Comanda vacía</b>Marca cantidades o usa el llenado automático.</div>';
-
-  return `<h2 class="page">${dir ? 'Compra a proveedor' : 'Requerimiento del día · ' + LOCS[who].short}</h2>
+  const dir = verCentro(), lista = filtra(true);
+  let html = '';
+  for (const c of cats()){
+    const items = lista.filter(i => i.categoria === c);
+    if (!items.length) continue;
+    html += `<div class="seccion">${esc(c)}</div>`;
+    for (const i of items){
+      const s = stock(who,i.id), e = estado(who,i.id), sug = sugerir(who,i), cc = draft[i.id] || 0;
+      const {min} = nivel(who,i.id);
+      const exceso = !dir && sug > 0 && cc > sug + min;
+      const corto = !dir && cc > 0 && cc > dispReal(i.id);
+      html += `<div class="ic ${e}">
+        <div class="txt">
+          <div class="nm">${esc(i.nombre)}</div>
+          <div class="meta">
+            <span class="pill ${e}">${etiqueta(e)}</span>
+            <span class="mono">${dir ? esc(i.proveedor||'sin proveedor') : 'tienes ' + s + ' ' + esc(i.unidad)}</span>
+            ${sug > 0 ? `<span class="pill sug">sugerido ${sug}</span>` : ''}
+          </div>
+          ${exceso ? '<div class="flag amb">⚠ Más de lo que suele consumir</div>' : ''}
+          ${corto ? `<div class="flag red">⚠ El comisariato solo tiene ${Math.max(0,dispReal(i.id))}</div>` : ''}
+        </div>
+        ${stepper(cc, `addDraft('${i.id}',${cc-1})`, `addDraft('${i.id}',${cc+1})`, `addDraft('${i.id}',this.value)`, cc>0)}
+      </div>`;
+    }
+  }
+  return `<h2 class="page">${dir ? 'Compra a proveedor' : 'Requerimiento de hoy'}</h2>
   <p class="sub">${dir
-    ? 'El comisariato es el único que compra fuera. El llenado automático calcula lo que hace falta para reponer su nivel par <b>más</b> lo que ya está apartado para las tiendas.'
-    : 'Pide al comisariato lo que necesitas hoy. Cuando lo surtan, tu inventario se actualiza solo.'}</p>
-  ${flowbar(dir?'p':'c')}
-  <div style="display:grid;grid-template-columns:1fr;gap:20px" id="reqgrid">
-    <div class="comanda">
-      <div class="top">
-        <h3>${dir ? 'Orden de compra' : 'Comanda de pedido'}</h3>
-        <div class="meta">${dir ? 'Comisariato → proveedores' : LOCS[who].short + ' → comisariato'} · ${hoy()}</div>
-      </div>
-      <div class="body">${comanda}</div>
-      <div class="foot">
-        <div class="row" style="justify-content:space-between;margin-bottom:12px">
-          <span class="eyebrow">Costo estimado</span>
-          <span class="mono" style="font-weight:700;font-size:17px">${money(total)}</span>
-        </div>
-        <div class="row">
-          <button class="btn" style="flex:1" onclick="enviarPedido()" ${lineas.length?'':'disabled'}>${dir ? 'Generar orden' : 'Enviar pedido'}</button>
-          <button class="btn ghost" onclick="autollenar()">Llenado automático</button>
-        </div>
-      </div>
-    </div>
-    <div>
-      ${buscador('style="width:100%;margin-bottom:12px"')}
-      ${chips()}
-      <div class="card" style="overflow:hidden">
-        <table class="tbl">
-          <thead><tr><th>Insumo</th><th class="hide-sm">Estado</th><th class="hide-sm">Sugerido</th><th>${dir?'Comprar':'Pedir'}</th></tr></thead>
-          <tbody>${opciones || '<tr><td colspan="4" class="empty">Sin resultados.</td></tr>'}</tbody>
-        </table>
-      </div>
-    </div>
-  </div>`;
+    ? 'Repone el par del comisariato y cubre lo que ya está apartado para las tiendas.'
+    : 'Dale a <b>Llenado automático</b> y la app arma tu comanda con lo que te falta.'}</p>
+  <button class="btn ghost wide" onclick="autollenar()" style="margin-bottom:4px">✨ Llenado automático</button>
+  ${barra()}
+  ${html || '<div class="card empty"><b>Sin resultados</b>Prueba con otra búsqueda.</div>'}`;
+}
+
+function cbar(){
+  const lineas = Object.entries(draft).filter(([,c]) => c > 0);
+  if (tab !== 'req' || !lineas.length) return '';
+  const total = lineas.reduce((a,[id,c]) => a + c * Number(item(id).costo), 0);
+  return `<div class="cbar"><div class="inner">
+    <div class="info"><b>${lineas.length} ${lineas.length===1?'insumo':'insumos'}</b><span>${money(total)} estimado</span></div>
+    <button class="btn ghost sm" onclick="abrirSheet()">Ver</button>
+    <button class="btn" onclick="abrirSheet()">${verCentro()?'Generar':'Enviar'}</button>
+  </div></div>`;
 }
 
 function vPedidos(){
   const mios = REQ.filter(r => r.tipo === 'tienda' && (isDir() || r.sucursal === sesion.sucursal));
-  if (!mios.length) return `<h2 class="page">Pedidos de tiendas</h2>
-    <p class="sub">Aquí llegan los requerimientos que las tiendas mandan al comisariato.</p>
-    <div class="card empty"><b>Todavía no hay pedidos</b>Cuando una tienda envíe su requerimiento del día, aparecerá aquí.</div>`;
-
+  if (!mios.length) return `<h2 class="page">Pedidos</h2>
+    <div class="card empty"><b>Todavía no hay pedidos</b>Cuando una tienda envíe su requerimiento, aparece aquí.</div>`;
   const cards = mios.map(r => {
     const editable = isDir() && r.estado === 'enviado';
     const total = r.lineas.reduce((a,l) => a + Number(l.aprob||0) * Number(item(l.insumo_id)?.costo||0), 0);
@@ -595,115 +642,99 @@ function vPedidos(){
       const corto = ['enviado','aprobado'].includes(r.estado) && Number(l.aprob) > disp;
       const parcial = l.surtido != null && Number(l.surtido) < Number(l.cant);
       return `<div class="pl">
-        <span class="n">${i.nombre}${corto ? `<span class="tag out" style="margin-left:5px">Solo hay ${disp}</span>` : ''}</span>
-        <span class="mono" style="color:var(--muted);font-size:12px">pidió ${l.cant} ${i.unidad}</span>
+        <span class="n">${esc(i.nombre)}${corto ? `<br><span class="pill out">solo hay ${disp}</span>` : ''}</span>
+        <span class="mono" style="color:var(--muted);font-size:11.5px">pidió ${l.cant}</span>
         ${editable
-          ? `<input type="number" value="${l.aprob}" style="width:72px" class="mono" onchange="setLinea(${l.id}, this.value)">`
-          : `<span class="mono" style="font-weight:700">${l.surtido ?? l.aprob} ${i.unidad}${parcial ? ' ⚠' : ''}</span>`}
+          ? `<input type="number" inputmode="numeric" value="${l.aprob}" class="mono" onchange="setLinea(${l.id},this.value)">`
+          : `<span class="mono" style="font-weight:700">${l.surtido ?? l.aprob} ${esc(i.unidad)}${parcial?' ⚠':''}</span>`}
       </div>`;
     }).join('');
-
-    let acciones = '';
+    let acc = '';
     if (isDir()){
-      if (r.estado === 'enviado')  acciones = `<button class="btn sm" onclick="setEstado('${r.id}','aprobado')">Aprobar</button><button class="btn sm ghost" onclick="setEstado('${r.id}','cancelado')">Cancelar</button>`;
-      if (r.estado === 'aprobado') acciones = `<button class="btn sm dark" onclick="surtir('${r.id}')">Marcar como surtido</button>`;
+      if (r.estado === 'enviado')  acc = `<div class="acciones"><button class="btn sm" onclick="setEstado('${r.id}','aprobado')">Aprobar</button><button class="btn sm ghost" onclick="setEstado('${r.id}','cancelado')">Cancelar</button></div>`;
+      if (r.estado === 'aprobado') acc = `<div class="acciones"><button class="btn sm dark" onclick="surtir('${r.id}')">Marcar como surtido</button></div>`;
     }
-
     return `<div class="card ped">
       <div class="hd">
         <b>${LOCS[r.sucursal].short}</b>
-        <span class="st ${r.estado}">${r.estado}</span>
-        <span class="mono">${r.fecha} · ${new Date(r.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</span>
-        <span style="margin-left:auto" class="row">${acciones}</span>
+        <span class="stt ${r.estado}">${r.estado}</span>
+        <span class="mono" style="margin-left:auto">${r.fecha}</span>
       </div>
       <div class="lines">${lines}</div>
-      <div class="row" style="justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+      <div class="row" style="justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)">
         <span class="eyebrow">${r.estado==='surtido'?'Costo surtido':'Costo estimado'}</span>
         <span class="mono" style="font-weight:700">${money(total)}</span>
       </div>
+      ${acc}
     </div>`;
   }).join('');
-
-  return `<h2 class="page">Pedidos de tiendas</h2>
-  <p class="sub">${isDir() ? 'Ajusta cantidades, aprueba y surte. Al surtir, el insumo sale del comisariato y entra a la tienda.' : 'El estado de tus requerimientos.'}</p>
+  return `<h2 class="page">Pedidos</h2>
+  <p class="sub">${isDir() ? 'Ajusta, aprueba y surte. Al surtir sale del comisariato y entra a la tienda.' : 'El estado de tus requerimientos.'}</p>
   ${cards}`;
 }
 
 function vCompras(){
   const compras = REQ.filter(r => r.tipo === 'compra');
-  if (!compras.length) return `<h2 class="page">Compras a proveedor</h2>
-    <p class="sub">Las órdenes que el comisariato manda a los proveedores.</p>
-    <div class="card empty"><b>Sin órdenes de compra</b>Genera una desde la pestaña Compra a proveedor.</div>`;
-
+  if (!compras.length) return `<h2 class="page">Compras</h2>
+    <div class="card empty"><b>Sin órdenes de compra</b>Genérala desde la pestaña Comprar.</div>`;
   const cards = compras.map(r => {
     const total = r.lineas.reduce((a,l) => a + Number(l.aprob||0) * Number(item(l.insumo_id)?.costo||0), 0);
     const porProv = {};
-    r.lineas.forEach(l => { const i = item(l.insumo_id); if(!i) return; const p = i.proveedor || 'Sin proveedor asignado'; (porProv[p] = porProv[p] || []).push(l); });
-    const bloques = Object.entries(porProv).map(([p,ls]) => `
-      <div class="provhead">${p}</div>
-      ${ls.map(l => {
-        const i = item(l.insumo_id);
+    r.lineas.forEach(l => { const i = item(l.insumo_id); if(!i) return;
+      const p = i.proveedor || 'Sin proveedor asignado'; (porProv[p] = porProv[p] || []).push(l); });
+    const bloques = Object.entries(porProv).map(([p,ls]) => `<div class="provhead">${esc(p)}</div>
+      ${ls.map(l => { const i = item(l.insumo_id);
         return `<div class="pl">
-          <span class="n">${i.nombre}</span>
+          <span class="n">${esc(i.nombre)}</span>
           ${r.estado === 'aprobado'
-            ? `<input type="number" value="${l.aprob}" style="width:72px" class="mono" onchange="setLinea(${l.id}, this.value)">`
+            ? `<input type="number" inputmode="numeric" value="${l.aprob}" class="mono" onchange="setLinea(${l.id},this.value)">`
             : `<span class="mono" style="font-weight:700">${l.surtido ?? l.aprob}</span>`}
-          <span class="u">${i.unidad}</span>
-          <span class="mono" style="color:var(--muted);font-size:12px;width:84px;text-align:right">${money(Number(l.aprob||0)*Number(i.costo))}</span>
-        </div>`;
-      }).join('')}`).join('');
-
+          <span style="color:var(--muted);font-size:12px">${esc(i.unidad)}</span>
+        </div>`; }).join('')}`).join('');
     return `<div class="card ped">
       <div class="hd">
         <b>Orden de compra</b>
-        <span class="st ${r.estado}">${r.estado === 'aprobado' ? 'por recibir' : r.estado}</span>
-        <span class="mono">${r.fecha}</span>
-        <span style="margin-left:auto">${r.estado === 'aprobado' && isDir() ? `<button class="btn sm dark" onclick="recibir('${r.id}')">Recibir mercancía</button>` : ''}</span>
+        <span class="stt ${r.estado}">${r.estado === 'aprobado' ? 'por recibir' : r.estado}</span>
+        <span class="mono" style="margin-left:auto">${r.fecha}</span>
       </div>
       <div class="lines">${bloques}</div>
-      <div class="row" style="justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
-        <span class="eyebrow">Total de la compra</span>
-        <span class="mono" style="font-weight:700;font-size:16px">${money(total)}</span>
+      <div class="row" style="justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)">
+        <span class="eyebrow">Total</span><span class="mono" style="font-weight:700">${money(total)}</span>
       </div>
+      ${r.estado === 'aprobado' && isDir() ? `<div class="acciones"><button class="btn sm dark" onclick="recibir('${r.id}')">Recibir mercancía</button></div>` : ''}
     </div>`;
   }).join('');
-
-  return `<h2 class="page">Compras a proveedor</h2>
-  <p class="sub">Agrupadas por proveedor para que puedas mandar cada bloque tal cual. Al recibir la mercancía entra al inventario del comisariato.</p>
+  return `<h2 class="page">Compras</h2>
+  <p class="sub">Agrupadas por proveedor. Al recibir, entra al inventario del comisariato.</p>
   ${cards}`;
 }
 
 function vPanel(){
-  const pend = REQ.filter(r => r.tipo==='tienda' && r.estado === 'enviado').length;
-  const porRecibir = REQ.filter(r => r.tipo==='compra' && r.estado === 'aprobado').length;
+  const pend = REQ.filter(r => r.tipo==='tienda' && r.estado==='enviado').length;
+  const rec = REQ.filter(r => r.tipo==='compra' && r.estado==='aprobado').length;
   const valorTotal = Object.keys(LOCS).reduce((a,l) => a + CAT.reduce((b,i) => b + stock(l,i.id)*Number(i.costo), 0), 0);
   const noCubre = CAT.filter(i => comprometido(i.id) > stock('centro',i.id));
-
   const tarjetas = Object.keys(LOCS).map(l => {
     const focos = CAT.filter(i => ['out','low'].includes(estado(l,i.id)));
-    const valor = CAT.reduce((b,i) => b + stock(l,i.id)*Number(i.costo), 0);
-    return `<div class="card kpi">
+    return `<div class="card kpi full">
       <span class="eyebrow">${LOCS[l].n}</span>
-      <div class="k ${focos.length?'red':''}">${focos.length} <span style="font-size:14px;font-family:'Archivo';color:var(--muted)">focos</span></div>
-      <div class="focos">Valor: <b>${money(valor)}</b><br>
-        ${focos.slice(0,5).map(i => `${estado(l,i.id)==='out'?'🔴':'🟠'} ${i.nombre}`).join('<br>') || '✅ Todo en nivel'}
-        ${focos.length>5 ? `<br><span style="color:var(--fresa);font-weight:700">+${focos.length-5} más</span>` : ''}
-      </div></div>`;
+      <div class="k ${focos.length?'red':''}">${focos.length} <span style="font-size:13px;font-family:Archivo;color:var(--muted)">focos</span></div>
+      <div class="focos">${focos.slice(0,4).map(i => `${estado(l,i.id)==='out'?'🔴':'🟠'} ${esc(i.nombre)}`).join('<br>') || '✅ Todo en nivel'}
+      ${focos.length>4 ? `<br><b style="color:var(--fresa)">+${focos.length-4} más</b>` : ''}</div>
+    </div>`;
   }).join('');
-
-  return `<h2 class="page">Panel general</h2>
-  <p class="sub">La cadena completa de un vistazo.</p>
-  ${flowbar()}
-  <div class="grid3" style="margin-bottom:16px">
-    <div class="card kpi"><span class="eyebrow">Pedidos por aprobar</span><div class="k ${pend?'red':''}">${pend}</div></div>
-    <div class="card kpi"><span class="eyebrow">Compras por recibir</span><div class="k">${porRecibir}</div></div>
-    <div class="card kpi"><span class="eyebrow">Valor total inventario</span><div class="k">${money(valorTotal)}</div></div>
+  return `<h2 class="page">Panel</h2>
+  <p class="sub">La cadena completa: proveedores → comisariato → tiendas.</p>
+  <div class="kpis">
+    <div class="card kpi"><span class="eyebrow">Por aprobar</span><div class="k ${pend?'red':''}">${pend}</div></div>
+    <div class="card kpi"><span class="eyebrow">Por recibir</span><div class="k">${rec}</div></div>
+    <div class="card kpi full"><span class="eyebrow">Valor total del inventario</span><div class="k">${money(valorTotal)}</div></div>
   </div>
-  ${noCubre.length ? `<div class="card" style="padding:16px 18px;margin-bottom:16px;border-left:4px solid var(--fresa)">
+  ${noCubre.length ? `<div class="card kpi" style="border-left:4px solid var(--fresa);margin-bottom:12px">
     <span class="eyebrow" style="color:var(--fresa)">El comisariato no alcanza a cubrir lo pedido</span>
-    <div class="focos" style="margin-top:6px">${noCubre.slice(0,12).map(i => `🔴 <b>${i.nombre}</b> — piden ${comprometido(i.id)} ${i.unidad}, hay ${stock('centro',i.id)}`).join('<br>')}</div>
+    <div class="focos">${noCubre.slice(0,8).map(i => `🔴 <b>${esc(i.nombre)}</b> — piden ${comprometido(i.id)}, hay ${stock('centro',i.id)}`).join('<br>')}</div>
   </div>` : ''}
-  <div class="grid3">${tarjetas}</div>`;
+  <div class="kpis">${tarjetas}</div>`;
 }
 
 function vMovimientos(){
@@ -711,112 +742,84 @@ function vMovimientos(){
     const i = item(m.insumo_id);
     return `<div class="mv">
       <span class="t">${new Date(m.created_at).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
-      <span class="d"><b>${i ? i.nombre : 'Insumo dado de baja'}</b> <span style="color:var(--muted)">· ${m.nota || m.tipo}${m.por ? ' · ' + m.por : ''}</span></span>
+      <span class="d"><b>${i ? esc(i.nombre) : 'Insumo dado de baja'}</b><br><span style="color:var(--muted);font-size:12px">${esc(m.nota||m.tipo)}${m.por?' · '+esc(m.por):''}</span></span>
       <span class="q ${Number(m.delta)>0?'up':'dn'}">${Number(m.delta)>0?'+':''}${Number(m.delta)}</span>
     </div>`;
   }).join('');
-  return `<h2 class="page">Movimientos · ${LOCS[who].short}</h2>
-  <p class="sub">Todo lo que entró, salió o se ajustó. Últimos 200 registros.</p>
-  <div class="card moves">${rows || '<div class="empty"><b>Sin movimientos</b>Aparecerán aquí en cuanto ajustes inventario o recibas un pedido.</div>'}</div>`;
+  return `<h2 class="page">Movimientos</h2>
+  <p class="sub">${LOCS[who].short} · lo que entró, salió o se ajustó.</p>
+  <div class="card">${rows || '<div class="empty"><b>Sin movimientos</b>Aparecerán en cuanto ajustes inventario o te surtan.</div>'}</div>`;
 }
 
 function vCatalogo(){
-  const num = (id,campo,val,w) => `<input type="number" value="${val}" style="width:${w||58}px;border:none;padding:6px" class="mono" onchange="editarInsumo('${id}','${campo}',this.value)">`;
-  const txt = (id,campo,val,w) => `<input type="text" value="${(val||'').replace(/"/g,'&quot;')}" style="width:${w};border:none;padding:6px" onchange="editarInsumo('${id}','${campo}',this.value)">`;
-  const niv = (loc,id,campo,val) => `<input type="number" value="${val}" style="width:58px;border:none;padding:6px" class="mono" onchange="editarNivel('${loc}','${id}','${campo}',this.value)">`;
-
-  const rows = filtra().map(i => {
+  const rows = filtra(false).map(i => {
     const n = nivel(who,i.id);
-    return `<tr>
-      <td>${txt(i.id,'nombre',i.nombre,'100%;min-width:150px')}</td>
-      <td class="hide-sm">${txt(i.id,'categoria',i.categoria,'105px')}</td>
-      <td>${txt(i.id,'unidad',i.unidad,'56px')}</td>
-      <td>${num(i.id,'costo',i.costo,72)}</td>
-      <td>${txt(i.id,'proveedor',i.proveedor,'130px')}</td>
-      <td style="background:#FFFAF9">${verCentro() ? num(i.id,'min_com',i.min_com) : niv(who,i.id,'min_nivel',n.min)}</td>
-      <td style="background:#FFFAF9">${verCentro() ? num(i.id,'par_com',i.par_com) : niv(who,i.id,'par_nivel',n.par)}</td>
-      <td><button style="color:#CFB6BC;font-size:18px" onclick="borrarInsumo('${i.id}')" aria-label="Dar de baja">×</button></td>
-    </tr>`;
+    const nivelCampos = verCentro()
+      ? `<div><label>Mín comisariato</label><input class="niv" type="number" inputmode="numeric" value="${i.min_com}" onchange="editarInsumo('${i.id}','min_com',this.value)"></div>
+         <div><label>Par comisariato</label><input class="niv" type="number" inputmode="numeric" value="${i.par_com}" onchange="editarInsumo('${i.id}','par_com',this.value)"></div>`
+      : `<div><label>Mín ${esc(LOCS[who].short)}</label><input class="niv" type="number" inputmode="numeric" value="${n.min}" onchange="editarNivel('${who}','${i.id}','min_nivel',this.value)"></div>
+         <div><label>Par ${esc(LOCS[who].short)}</label><input class="niv" type="number" inputmode="numeric" value="${n.par}" onchange="editarNivel('${who}','${i.id}','par_nivel',this.value)"></div>`;
+    return `<div class="card ce">
+      <div class="row" style="gap:8px">
+        <input type="text" value="${esc(i.nombre)}" style="flex:1;min-width:140px;font-weight:700" onchange="editarInsumo('${i.id}','nombre',this.value)">
+        <button style="color:#CFB6BC;font-size:22px;padding:4px 8px" onclick="borrarInsumo('${i.id}')" aria-label="Dar de baja">×</button>
+      </div>
+      <div class="cgrid">
+        <div><label>Unidad</label><input type="text" value="${esc(i.unidad)}" onchange="editarInsumo('${i.id}','unidad',this.value)"></div>
+        <div><label>Costo unitario</label><input type="number" inputmode="decimal" value="${i.costo}" onchange="editarInsumo('${i.id}','costo',this.value)"></div>
+        <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" value="${esc(i.proveedor)}" placeholder="¿Quién lo surte?" onchange="editarInsumo('${i.id}','proveedor',this.value)"></div>
+        ${nivelCampos}
+      </div>
+    </div>`;
   }).join('');
-
-  return `<h2 class="page">Catálogo de insumos</h2>
-  <p class="sub"><b>Mín</b> dispara el foco rojo. <b>Par</b> es el nivel ideal: la diferencia contra lo que hay es lo que el sistema sugiere pedir. Los niveles que ves son los de <b>${LOCS[who].short}</b> — cámbiate de sucursal arriba para editar los de otra. Un par en <b>0</b> significa que esa tienda no maneja el insumo.</p>
-  ${isDir() ? `<div class="card" style="padding:16px;margin-bottom:16px">
-    <span class="eyebrow">Agregar insumo</span>
-    <div class="row" style="margin-top:10px">
-      <input type="text" id="ni-nombre" placeholder="Nombre" style="flex:2;min-width:140px">
-      <input type="text" id="ni-cat" placeholder="Categoría" value="Comestibles" style="flex:1;min-width:105px">
-      <input type="text" id="ni-uni" placeholder="Unidad" value="pza" style="width:75px">
-      <input type="number" id="ni-costo" placeholder="Costo" style="width:85px">
-      <input type="text" id="ni-prov" placeholder="Proveedor" style="min-width:120px">
-      <input type="number" id="ni-minc" placeholder="Mín comis." value="0" style="width:105px">
-      <input type="number" id="ni-parc" placeholder="Par comis." value="0" style="width:105px">
-      <button class="btn" onclick="nuevoInsumo()">Agregar</button>
-    </div>
-  </div>` : ''}
-  ${buscador('style="width:100%;margin-bottom:12px"')}
-  ${chips()}
-  <div class="card" style="overflow:auto">
-    <table class="tbl">
-      <thead><tr><th>Insumo</th><th class="hide-sm">Categoría</th><th>Un.</th><th>Costo</th><th>Proveedor</th>
-      <th style="background:#FFFAF9">Mín</th><th style="background:#FFFAF9">Par</th><th></th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="8" class="empty">Sin resultados.</td></tr>'}</tbody>
-    </table>
-  </div>`;
+  return `<h2 class="page">Catálogo</h2>
+  <p class="sub">Los niveles que ves son los de <b>${LOCS[who].short}</b>${isDir()?' — cámbiate de sucursal arriba para editar otra':''}. Par en <b>0</b> = esa tienda no maneja el insumo.</p>
+  ${barra()}
+  ${rows || '<div class="card empty"><b>Sin resultados</b></div>'}`;
 }
 
-/* ============ Render ============ */
+/* ===== Render ===== */
+const ICONOS = {inv:'📦', req:'📝', ped:'🚚', com:'🛒', pan:'📊', mov:'🕓', cat:'⚙️'};
 function render(){
-  const pend = REQ.filter(r => r.tipo==='tienda' && r.estado === 'enviado').length;
-  const rec  = REQ.filter(r => r.tipo==='compra' && r.estado === 'aprobado').length;
+  const pend = REQ.filter(r => r.tipo==='tienda' && r.estado==='enviado').length;
+  const rec  = REQ.filter(r => r.tipo==='compra' && r.estado==='aprobado').length;
 
-  const tabs = [
-    ['inv','Inventario',0],
-    ['req', verCentro() ? 'Compra a proveedor' : 'Requerimiento', 0],
-    ['ped','Pedidos', isDir() ? pend : 0],
-  ];
-  if (isDir()) tabs.push(['com','Compras', rec]);
-  if (isDir()) tabs.push(['pan','Panel',0]);
-  tabs.push(['mov','Movimientos',0], ['cat','Catálogo',0]);
+  const tabs = [['inv','Inventario',0], ['req', verCentro()?'Comprar':'Pedir', 0], ['ped','Pedidos', isDir()?pend:0]];
+  if (isDir()) tabs.push(['com','Compras', rec], ['pan','Panel',0]);
+  tabs.push(['mov','Historial',0], ['cat','Catálogo',0]);
 
   const views = {inv:vInventario, req:vRequerimiento, ped:vPedidos, com:vCompras, pan:vPanel, mov:vMovimientos, cat:vCatalogo};
   if (!views[tab] || (['com','pan'].includes(tab) && !isDir())) tab = 'inv';
 
-  // contexto: dirección puede cambiar de sucursal; la tienda queda fija en la suya
   document.getElementById('ctxslot').innerHTML = isDir()
-    ? `<label for="who" style="margin-right:6px">Viendo</label>
-       <select id="who">${Object.keys(LOCS).map(l => `<option value="${l}" ${who===l?'selected':''}>${LOCS[l].n}</option>`).join('')}</select>`
+    ? `<select class="aqui" id="who">${Object.keys(LOCS).map(l => `<option value="${l}" ${who===l?'selected':''}>${LOCS[l].short}</option>`).join('')}</select>`
     : `<span class="aqui">${LOCS[sesion.sucursal].short}</span>`;
-  if (isDir()) document.getElementById('who').addEventListener('change', async e => {
-    who = e.target.value; draft = {}; q=''; filtroCat=''; tab = 'inv';
+  if (isDir()) document.getElementById('who').onchange = async e => {
+    who = e.target.value; draft = {}; q=''; filtroCat=''; tab='inv';
     await cargar(); render();
-  });
+  };
 
   document.getElementById('nav').innerHTML = tabs.map(([k,n,p]) =>
-    `<button class="${tab===k?'on':''}" onclick="tab='${k}';q='';render()">${n}${p?`<span class="pip">${p}</span>`:''}</button>`).join('');
-  document.getElementById('app').innerHTML = views[tab]();
+    `<button class="${tab===k?'on':''}" onclick="tab='${k}';q='';window.scrollTo(0,0);render()">
+      <span class="ic">${ICONOS[k]}</span>${n}${p?`<span class="pip">${p}</span>`:''}</button>`).join('');
 
-  const g = document.getElementById('reqgrid');
-  if (g && window.innerWidth > 860) g.style.gridTemplateColumns = '1fr 1.2fr';
+  document.getElementById('app').innerHTML = views[tab]();
+  document.getElementById('cbarslot').innerHTML = cbar();
 }
 
 let tt;
 function toast(m){
   const t = document.getElementById('toast');
   t.textContent = m; t.classList.add('on');
-  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 3400);
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 3200);
 }
 
 window.addEventListener('focus', async () => { if (sesion){ await cargar(true); render(); } });
-setInterval(async () => { if (sesion && document.visibilityState === 'visible'){ await cargar(true); render(); } }, 45000);
+setInterval(async () => { if (sesion && document.visibilityState === 'visible' && !Object.keys(draft).length){ await cargar(true); render(); } }, 60000);
 
-/* ============ Arranque ============ */
-pintarLogin();
-const guardada = sessionStorage.getItem('lfi_sesion');
-if (guardada){
-  try{ sesion = JSON.parse(guardada); who = sesion.sucursal; arrancar(); }
-  catch(e){ sessionStorage.removeItem('lfi_sesion'); }
-}
+/* ===== Arranque ===== */
+const g = sessionStorage.getItem('lfi_sesion');
+if (g){ try{ sesion = JSON.parse(g); who = sesion.sucursal; arrancar(); } catch(e){ sessionStorage.removeItem('lfi_sesion'); } }
 </script>
 </body>
 </html>
