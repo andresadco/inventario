@@ -1012,6 +1012,17 @@ async function recibir(rid){
   toast(error ? 'No se pudo recibir: '+error.message : 'Mercancía recibida.');
   await cargar(true); render();
 }
+/* Cancela una orden de compra que aún no se recibe (no afecta inventario) */
+async function borrarCompra(rid){
+  const r = REQ.find(x => x.id === rid);
+  if (r && r.estado === 'recibido'){ toast('Esta orden ya se recibió. Primero dale "Deshacer y corregir".'); return; }
+  if (!confirm('¿Cancelar esta orden de compra? Se elimina por completo. (No afecta tu inventario porque todavía no la recibías.)')) return;
+  setDot('busy');
+  await db.from('lfi_pedido_lineas').delete().eq('pedido_id', rid);
+  await db.from('lfi_pedidos').delete().eq('id', rid);
+  toast('Orden de compra cancelada');
+  await cargar(true); render();
+}
 async function editarInsumo(id,campo,val){
   let v;
   if (campo === 'diario' || campo === 'granel') v = !!val;
@@ -1819,7 +1830,10 @@ function vCompras(){
 
     let acc = '';
     if (isDir()){
-      if (r.estado === 'aprobado') acc = `<div class="acciones"><button class="btn sm dark" onclick="recibir('${r.id}')">Recibir mercancía</button></div>`;
+      if (r.estado === 'aprobado') acc = `<div class="acciones">
+        <button class="btn sm dark" onclick="recibir('${r.id}')">Recibir mercancía</button>
+        <button class="btn sm ghost" onclick="borrarCompra('${r.id}')">Cancelar orden</button>
+      </div>`;
       if (r.estado === 'recibido') acc = `<div class="acciones"><button class="btn sm ghost" onclick="revertir('${r.id}')">↩︎ Deshacer y corregir</button></div>`;
     }
 
