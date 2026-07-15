@@ -27,7 +27,7 @@ body{
   font-family:'Archivo',system-ui,-apple-system,sans-serif;
   background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased;
   font-size:16px;
-  padding-bottom:calc(78px + var(--safe-b));   /* espacio para el menú de abajo */
+  padding-bottom:calc(90px + var(--safe-b));   /* fallback; el JS lo ajusta según menú + barra */
 }
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,select{font-family:inherit;color:inherit;font-size:16px}  /* 16px evita el zoom de iOS */
@@ -151,10 +151,11 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 
 /* ===== Comanda: barra flotante + hoja ===== */
 .cbar{
-  position:fixed;left:0;right:0;bottom:calc(60px + var(--safe-b));z-index:44;
+  position:fixed;left:0;right:0;z-index:46;
   background:var(--ink);color:#fff;padding:12px 14px;
   display:flex;align-items:center;gap:12px;
-  box-shadow:0 -6px 24px -10px rgba(0,0,0,.5);
+  box-shadow:0 -8px 24px -10px rgba(0,0,0,.55);
+  border-top:2px solid var(--fresa);
 }
 .cbar .inner{max-width:760px;margin:0 auto;width:100%;display:flex;align-items:center;gap:12px}
 .cbar .info{flex:1;min-width:0}
@@ -217,30 +218,39 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 .cnthead .btn{margin-left:auto;flex:none}
 .cnt{
   background:#fff;border:1px solid var(--line);border-radius:12px;
-  padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;
+  padding:12px 14px;margin-bottom:8px;
 }
 .cnt.hecho{border-color:var(--leaf);background:#F6FCF8}
-.cnt .ctxt{flex:1;min-width:0}
+.cnt .ctxt{margin-bottom:10px}
 .cnt .nm{font-weight:700;font-size:15px;line-height:1.25}
 .cnt .cmeta{font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cdif{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:11px;padding:2px 7px;border-radius:20px}
 .cdif.up{background:#E6F4EC;color:var(--leaf)}
 .cdif.dn{background:#FCE7EB;color:var(--fresa-dark)}
 .cdif.eq{background:#F1EBEC;color:var(--muted)}
+/* Fila de captura: campo(s) alineados a la derecha con etiqueta arriba */
+.ccampos{display:flex;gap:10px;align-items:flex-end;justify-content:flex-end}
+.ccampos .campo{display:flex;flex-direction:column;gap:4px}
+.ccampos label{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--muted);text-align:center}
 .cinput{
-  width:78px;height:46px;text-align:center;flex:none;
-  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:18px;
+  width:100%;height:48px;text-align:center;
+  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:19px;
   border:2px solid var(--line);border-radius:11px;
 }
 .cnt.hecho .cinput{border-color:var(--leaf);color:var(--leaf)}
-.cuni{font-size:11px;color:var(--muted);font-weight:700;width:32px;flex:none}
+.ccampos .campo.solo{flex:1}
+.ccampos .campo.solo .cinput{max-width:120px;margin-left:auto}
+.cinput.chico{width:88px}
+.cuni{font-size:11px;color:var(--muted);font-weight:700;align-self:center;padding-bottom:14px}
 .cntbar{
-  position:fixed;left:0;right:0;bottom:calc(60px + var(--safe-b));z-index:44;
-  background:var(--ink);padding:12px 14px;box-shadow:0 -6px 24px -10px rgba(0,0,0,.5);
+  position:fixed;left:0;right:0;z-index:46;
+  background:var(--ink);padding:12px 14px;
+  box-shadow:0 -8px 24px -10px rgba(0,0,0,.55);
+  border-top:2px solid var(--fresa);
 }
 .cntbar .inner{max-width:760px;margin:0 auto;display:flex;gap:10px}
-.cntbar .btn{flex:1}
-.cntbar .btn.ghost{flex:0 0 130px}
+.cntbar .btn{flex:1;min-height:48px}
+.cntbar .btn.ghost{flex:0 0 118px;background:#3D272D;color:#fff;border:1px solid #55393F}
 
 /* Arranque: nunca se ha contado */
 .arranque{
@@ -266,8 +276,8 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
   font-size:11px;color:var(--azul);background:#F5FAFC;border-radius:9px;
   padding:8px 10px;margin-top:10px;line-height:1.5;
 }
-.chk{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
-.chk input{width:17px;height:17px;accent-color:var(--fresa)}
+.chk{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;font-weight:700;color:var(--muted);line-height:1.4}
+.chk input{width:20px;height:20px;accent-color:var(--fresa);flex:none;margin-top:1px}
 #altabox{display:none}
 #altabox.on{display:block}
 
@@ -1075,23 +1085,25 @@ function vInventario(){
             </div>
           </div>
           ${pack
-            ? `<div class="cpack">
-                 <div><label>${esc(i.empaque)}s de ${i.factor}</label>
+            ? `<div class="ccampos">
+                 <div class="campo"><label>${esc(i.empaque)}s de ${i.factor}</label>
                    <input class="cinput chico" type="number" inputmode="numeric" data-cidx="${idx}"
                      id="p-${i.id}" value="${hecho ? aPacks(i,val) : ''}" placeholder="0"
                      onfocus="this.select()" oninput="capturarPack('${i.id}')"
                      onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('s-${i.id}').focus()}"></div>
-                 <div><label>sueltas</label>
+                 <div class="campo"><label>sueltas</label>
                    <input class="cinput chico" type="number" inputmode="numeric"
                      id="s-${i.id}" value="${hecho ? sueltas(i,val) : ''}" placeholder="0"
                      onfocus="this.select()" oninput="capturarPack('${i.id}')"
                      onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}"></div>
                </div>`
-            : `<input class="cinput" type="number" inputmode="decimal" data-cidx="${idx}"
-                 value="${hecho ? val : ''}" placeholder="—"
-                 onfocus="this.select()" oninput="capturar('${i.id}', this.value)"
-                 onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}">
-               <span class="cuni">${esc(i.unidad)}</span>`}
+            : `<div class="ccampos">
+                 <div class="campo solo"><label>${esc(i.unidad)}</label>
+                   <input class="cinput" type="number" inputmode="decimal" data-cidx="${idx}"
+                     value="${hecho ? val : ''}" placeholder="—"
+                     onfocus="this.select()" oninput="capturar('${i.id}', this.value)"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}"></div>
+               </div>`}
         </div>`;
         idx++;
       }
@@ -1585,7 +1597,7 @@ function vCatalogo(){
       <div class="row" style="gap:8px">
         <input type="text" value="${esc(i.nombre)}" style="flex:1;min-width:140px;font-weight:700" onchange="editarInsumo('${i.id}','nombre',this.value)">
         <label class="chk" title="Se pide todos los días">
-          <input type="checkbox" ${i.diario?'checked':''} onchange="editarInsumo('${i.id}','diario',this.checked)"> diario
+          <input type="checkbox" ${i.diario?'checked':''} onchange="editarInsumo('${i.id}','diario',this.checked)"> <span>diario</span>
         </label>
         <button style="color:#CFB6BC;font-size:22px;padding:4px 8px" onclick="borrarInsumo('${i.id}')" aria-label="Dar de baja">×</button>
       </div>
@@ -1600,7 +1612,7 @@ function vCatalogo(){
         ${nivelCampos}
       </div>
       <div class="row" style="gap:14px;margin-top:10px">
-        <label class="chk"><input type="checkbox" ${i.granel?'checked':''} onchange="editarInsumo('${i.id}','granel',this.checked)"> se compra a granel / peso variable</label>
+        <label class="chk"><input type="checkbox" ${i.granel?'checked':''} onchange="editarInsumo('${i.id}','granel',this.checked)"> <span>se compra a granel / peso variable</span></label>
       </div>
       ${i.granel ? `<div class="packnote">Se cuenta y se compra en <b>${esc(i.unidad)}</b>. Al recibir capturas el <b>peso real</b> que llegó — no se asume.</div>`
         : (f > 1 ? `<div class="packnote">Se compra por <b>${esc(i.empaque)}</b> de ${f} ${esc(i.unidad)}, pero se cuenta y se pide por <b>${esc(i.unidad)}</b>.</div>` : '')}
@@ -1622,10 +1634,10 @@ function vCatalogo(){
       <div><label>Par por tienda</label><input type="number" inputmode="numeric" id="ni-par" value="1"></div>
       <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" id="ni-prov" placeholder="¿Quién lo surte?"></div>
       <div style="grid-column:1 / -1">
-        <label class="chk"><input type="checkbox" id="ni-granel"> Se compra a granel / peso variable (ej: fresa por caja de peso distinto). El campo “se compra por” se usa como referencia de texto.</label>
+        <label class="chk"><input type="checkbox" id="ni-granel"> <span>Se compra a granel o por caja de peso variable (ej: fresa). El campo “se compra por” es solo una nota para el proveedor.</span></label>
       </div>
       <div style="grid-column:1 / -1">
-        <label class="chk"><input type="checkbox" id="ni-diario"> Se pide todos los días (sale hasta arriba en Pedir)</label>
+        <label class="chk"><input type="checkbox" id="ni-diario"> <span>Se pide todos los días (aparece hasta arriba en Pedir)</span></label>
       </div>
     </div>
     <datalist id="cats-list">${cats().map(c => `<option value="${esc(c)}">`).join('')}</datalist>
@@ -1665,7 +1677,23 @@ function render(){
 
   document.getElementById('app').innerHTML = views[tab]();
   document.getElementById('cbarslot').innerHTML = cbar();
+  ajustarBarras();
 }
+
+/* Coloca las barras flotantes (comanda / guardar) justo encima del menú,
+   midiendo su altura real (que cambia con el safe-area del iPhone),
+   y evita que la última tarjeta quede tapada. */
+function ajustarBarras(){
+  requestAnimationFrame(() => {
+    const nav = document.querySelector('.tabbar');
+    const navH = nav ? nav.offsetHeight : 60;
+    const flot = document.querySelector('.cntbar, .cbar');
+    if (flot) flot.style.bottom = navH + 'px';
+    const flotH = flot ? flot.offsetHeight : 0;
+    document.body.style.paddingBottom = (navH + flotH + 16) + 'px';
+  });
+}
+window.addEventListener('resize', ajustarBarras);
 
 let tt;
 function toast(m){
