@@ -187,6 +187,11 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 /* ===== Pedidos ===== */
 .ped{padding:14px;margin-bottom:10px}
 .ped .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.quienes{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)}
+.quienes b{color:var(--ink);font-weight:700}
+.segbar{display:flex;gap:4px;background:#F1EBEC;border-radius:11px;padding:4px;margin-bottom:10px}
+.segbar button{flex:1;padding:9px;border-radius:8px;font-size:13px;font-weight:700;color:var(--muted);background:none}
+.segbar button.on{background:#fff;color:var(--ink);box-shadow:var(--shadow)}
 .ped .hd b{font-size:15px}
 .ped .hd .mono{font-size:11px;color:var(--muted)}
 .stt{padding:4px 9px;border-radius:20px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
@@ -466,9 +471,10 @@ const LOCS = {
 };
 const TIENDAS = ['moctezuma','narvarte','balbuena'];
 
-let CAT=[], INV={}, NIV={}, MOV=[], REQ=[], PRES={}, draft={};
+let CAT=[], INV={}, INVD={}, NIV={}, MOV=[], REQ=[], PRES={}, draft={};
 let sesion=null, who='moctezuma', tab='inv', q='', filtroCat='', cargando=false;
-let modoConteo=false, conteo={};   // conteo = capturas pendientes de guardar
+let modoConteo=false, conteo={};
+let compView='prov';   // conteo = capturas pendientes de guardar
 
 const hoy = () => new Date().toISOString().slice(0,10);
 const money = n => '$' + (Math.round(n*100)/100).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -484,6 +490,7 @@ const limpiaCant = (i, n) => esFrac(i) ? Math.max(0, Math.round((Number(n)||0)*1
 const item = id => CAT.find(i => i.id === id);
 const stock = (loc,id) => (INV[loc] && INV[loc][id]) || 0;
 const isDir = () => sesion && sesion.rol === 'direccion';
+const quien = () => (sesion && sesion.nombre) || (sesion && LOCS[sesion.sucursal] && LOCS[sesion.sucursal].short) || 'Alguien';
 const verCentro = () => who === 'centro';
 const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 
@@ -537,7 +544,7 @@ async function entrar(){
   const { data, error } = await db.from('lfi_accesos').select('*').eq('sucursal',suc).eq('pin',pin).maybeSingle();
   if (error){ err.textContent = 'No hay conexión con la base.'; return; }
   if (!data){ err.textContent = 'PIN incorrecto para esa sucursal.'; document.getElementById('lg-pin').value=''; return; }
-  sesion = {sucursal:data.sucursal, rol:data.rol};
+  sesion = {sucursal:data.sucursal, rol:data.rol, nombre:data.nombre || LOCS[data.sucursal].short};
   localStorage.setItem('lfi_sesion', JSON.stringify(sesion));
   who = sesion.sucursal;
   await arrancar();
@@ -575,9 +582,12 @@ async function cargar(silencioso){
     const bad = [ins,stk,niv,peds,lins,movs,pres].find(r => r.error);
     if (bad) throw bad.error;
     CAT = ins.data;
-    INV = {}; NIV = {}; PRES = {};
-    Object.keys(LOCS).forEach(l => { INV[l] = {}; NIV[l] = {}; });
-    stk.data.forEach(s => { if (INV[s.sucursal]) INV[s.sucursal][s.insumo_id] = Number(s.cantidad); });
+    INV = {}; INVD = {}; NIV = {}; PRES = {};
+    Object.keys(LOCS).forEach(l => { INV[l] = {}; INVD[l] = {}; NIV[l] = {}; });
+    stk.data.forEach(s => {
+      if (INV[s.sucursal]){ INV[s.sucursal][s.insumo_id] = Number(s.cantidad);
+        if (s.desglose) INVD[s.sucursal][s.insumo_id] = s.desglose; }
+    });
     niv.data.forEach(n => { if (NIV[n.sucursal]) NIV[n.sucursal][n.insumo_id] = n; });
     pres.data.forEach(p => { (PRES[p.insumo_id] = PRES[p.insumo_id] || []).push(p); });
     REQ = peds.data.map(p => ({...p, lineas: lins.data.filter(l => l.pedido_id === p.id)}));
@@ -597,7 +607,7 @@ async function ajustar(loc,id,val){
   if (nueva === stock(loc,id)) return;
   INV[loc][id] = nueva; render();
   setDot('busy');
-  const { error } = await db.rpc('lfi_ajustar', {p_suc:loc, p_insumo:id, p_nueva:nueva, p_por:LOCS[sesion.sucursal].short});
+  const { error } = await db.rpc('lfi_ajustar', {p_suc:loc, p_insumo:id, p_nueva:nueva, p_por:quien()});
   if (error) toast('No se guardó. Revisa tu internet.');
   await cargar(true); render();
 }
@@ -633,6 +643,24 @@ function textoDesglose(id, obj){
   return cajasDe(id).filter(p => obj[p.id] > 0)
     .map(p => `${obj[p.id]} de ${p.nombre.replace('Caja ','').replace(' kg','kg')}`).join(' + ');
 }
+/* Desglose del stock físico de un insumo multi en una sucursal (cuántas cajas de cada tamaño) */
+function stockDesglose(loc, id){
+  const d = (INVD[loc] && INVD[loc][id]) || {};
+  return d;
+}
+function stockCajas(loc, id){
+  const d = stockDesglose(loc, id);
+  return cajasDe(id).reduce((a,p) => a + (Number(d[p.id])||0), 0);
+}
+/* Widget de dos casillas de caja para pedir/contar la fresa */
+function cajasWidget(id, valores, onChange){
+  return `<div class="cajaswrap">${cajasDe(id).map(p => `
+    <div class="cajabox">
+      <label>${esc(p.nombre)}</label>
+      <input type="number" inputmode="numeric" min="0" value="${valores[p.id] || ''}" placeholder="0"
+        onfocus="this.select()" onchange="${onChange}('${id}','${p.id}',this.value)">
+    </div>`).join('')}</div>`;
+}
 function autollenar(){
   // No borra lo que ya elegiste de cajas (fresa); solo rellena los normales
   Object.keys(draft).forEach(id => { if (!esMulti(item(id))) delete draft[id]; });
@@ -648,7 +676,7 @@ async function enviarPedido(){
   const tipo = verCentro() ? 'compra' : 'tienda';
   cerrarSheet(); setDot('busy');
   const { data:ped, error } = await db.from('lfi_pedidos')
-    .insert({tipo, sucursal:who, fecha:hoy(), estado: tipo==='compra' ? 'aprobado' : 'enviado'})
+    .insert({tipo, sucursal:who, fecha:hoy(), estado: tipo==='compra' ? 'aprobado' : 'enviado', pedido_por:quien()})
     .select().single();
   if (error){ toast('No se pudo enviar el pedido.'); setDot('err'); return; }
   const filas = ids.map(id => {
@@ -740,13 +768,17 @@ function mejorCombo(insumoId, meta){
 /* Compra por cajas de tamaño fijo: suma kilos y guarda el detalle (2×Caja 4 kg + 1×Caja 6 kg) */
 async function setCajas(lid, insumoId){
   const pres = PRES[insumoId] || [];
-  let total = 0; const detalle = [];
+  let total = 0; const detalle = []; const desglose = {};
   pres.forEach(p => {
     const n = Math.max(0, Number(document.getElementById(`caja-${lid}-${p.id}`)?.value)||0);
-    if (n > 0){ total += n * Number(p.contiene); detalle.push(`${n}×${p.nombre}`); }
+    if (n > 0){ total += n; desglose[p.id] = n; detalle.push(`${n} de ${p.nombre.replace('Caja ','').replace(' kg','kg')}`); }
   });
   setDot('busy');
-  await db.from('lfi_pedido_lineas').update({aprob: total, nota: detalle.join(' + ') || null}).eq('id',lid);
+  await db.from('lfi_pedido_lineas').update({
+    aprob: total, cant: total,
+    desglose: Object.keys(desglose).length ? desglose : null,
+    nota: detalle.join(' + ') || null
+  }).eq('id',lid);
   await cargar(true); render();
 }
 async function borrarLinea(lid){
@@ -770,7 +802,7 @@ async function agregarLinea(rid){
 async function revertir(rid){
   if (!confirm('Esto va a deshacer el movimiento de inventario y dejar el pedido editable otra vez. ¿Le seguimos?')) return;
   setDot('busy');
-  const { error } = await db.rpc('lfi_revertir', {p_pedido:rid, p_por:LOCS[sesion.sucursal].short});
+  const { error } = await db.rpc('lfi_revertir', {p_pedido:rid, p_por:quien()});
   toast(error ? 'No se pudo corregir: '+error.message : 'Deshecho. Ya lo puedes corregir y volver a surtir.');
   await cargar(true); render();
 }
@@ -788,8 +820,23 @@ function necesidades(){
     const pedido = Object.values(piden).reduce((a,b) => a+b, 0);
     const hay = stock('centro', i.id);
     const comprar = Math.max(0, Number(i.par_com) - (hay - pedido));
-    return {i, piden, pedido, hay, comprar};
-  }).filter(n => n.comprar > 0)
+
+    // Insumo multi (fresa): calcular cuántas cajas de cada tamaño comprar
+    let comprarCajas = null;
+    if (esMulti(i)){
+      const pedidoCajas = {}, tieneCajas = stockDesglose('centro', i.id);
+      REQ.filter(r => r.tipo==='tienda' && ['enviado','aprobado'].includes(r.estado)).forEach(r => {
+        const l = r.lineas.find(x => x.insumo_id === i.id);
+        if (l && l.desglose) cajasDe(i.id).forEach(p => { pedidoCajas[p.id] = (pedidoCajas[p.id]||0) + (Number(l.desglose[p.id])||0); });
+      });
+      comprarCajas = {};
+      cajasDe(i.id).forEach(p => {
+        const falta = Math.max(0, (pedidoCajas[p.id]||0) - (Number(tieneCajas[p.id])||0));
+        if (falta > 0) comprarCajas[p.id] = falta;
+      });
+    }
+    return {i, piden, pedido, hay, comprar, comprarCajas};
+  }).filter(n => n.comprar > 0 || (n.comprarCajas && Object.keys(n.comprarCajas).length))
     .sort((a,b) => (b.i.diario - a.i.diario) || (b.pedido - a.pedido));
 }
 
@@ -864,7 +911,15 @@ function pedirEn(i, unidades){
 function textoProveedor(prov){
   const items = necesidades().filter(n => (n.i.proveedor || 'Sin proveedor asignado') === prov);
   const L = [`🍓 *Lady Fresa* — pedido del ${hoy()}`, '', `*${prov}*`, ''];
-  items.forEach(n => L.push(`• ${n.i.nombre}: *${pedirEn(n.i, n.comprar)}*`));
+  items.forEach(n => {
+    if (esMulti(n.i) && n.comprarCajas){
+      const txt = cajasDe(n.i.id).filter(p => n.comprarCajas[p.id]>0)
+        .map(p => `${n.comprarCajas[p.id]} ${p.nombre.toLowerCase()}`).join(' + ');
+      L.push(`• ${n.i.nombre}: *${txt}*`);
+    } else {
+      L.push(`• ${n.i.nombre}: *${pedirEn(n.i, n.comprar)}*`);
+    }
+  });
   L.push('', 'Gracias!');
   return L.join('\n');
 }
@@ -919,7 +974,7 @@ async function enviarDiario(){
   if (!filas.length){ toast('Pon cuánta fresa necesitas hoy.'); return; }
   setDot('busy');
   const { data:ped, error } = await db.from('lfi_pedidos')
-    .insert({tipo:'tienda', sucursal:who, fecha:hoy(), estado:'enviado'}).select().single();
+    .insert({tipo:'tienda', sucursal:who, fecha:hoy(), estado:'enviado', pedido_por:quien()}).select().single();
   if (error){ toast('No se pudo enviar.'); setDot('err'); return; }
   await db.from('lfi_pedido_lineas').insert(filas.map(f => ({...f, pedido_id:ped.id})));
   filas.forEach(f => delete draft[f.insumo_id]);
@@ -938,13 +993,15 @@ function selectorInsumos(rid){
 }
 async function surtir(rid){
   setDot('busy');
-  const { error } = await db.rpc('lfi_surtir', {p_pedido:rid, p_por:LOCS[sesion.sucursal].short});
+  const { error } = await db.rpc('lfi_surtir', {p_pedido:rid, p_por:quien()});
+  if (!error) await db.from('lfi_pedidos').update({recibido_por:quien()}).eq('id',rid);
   toast(error ? 'No se pudo surtir: '+error.message : 'Surtido. Inventarios actualizados.');
   await cargar(true); render();
 }
 async function recibir(rid){
   setDot('busy');
-  const { error } = await db.rpc('lfi_recibir', {p_pedido:rid, p_por:LOCS[sesion.sucursal].short});
+  const { error } = await db.rpc('lfi_recibir', {p_pedido:rid, p_por:quien()});
+  if (!error) await db.from('lfi_pedidos').update({recibido_por:quien()}).eq('id',rid);
   toast(error ? 'No se pudo recibir: '+error.message : 'Mercancía recibida.');
   await cargar(true); render();
 }
@@ -1044,6 +1101,16 @@ function capturarPack(id){
   respaldarConteo();
   refrescarProgreso();
 }
+/* Conteo de fresa: guarda un objeto {presId: numCajas} en conteo[id] */
+function capturarCaja(id, presId, val){
+  const v = Math.max(0, Math.round(Number(val)||0));
+  let obj = (typeof conteo[id] === 'object' && conteo[id]) ? {...conteo[id]} : {...stockDesglose(who, id)};
+  if (v === 0) delete obj[presId]; else obj[presId] = v;
+  if (Object.keys(obj).length === 0) delete conteo[id];
+  else conteo[id] = obj;
+  respaldarConteo();
+  refrescarProgreso();
+}
 /* Respaldo local: si la app se recarga a media captura, no se pierde el conteo */
 function respaldarConteo(){
   try{
@@ -1083,7 +1150,9 @@ async function guardarConteo(){
   let fallas = 0;
   for (let k = 0; k < entradas.length; k += 8){
     const res = await Promise.all(entradas.slice(k, k+8).map(([id,v]) =>
-      db.rpc('lfi_ajustar', {p_suc:who, p_insumo:id, p_nueva:v, p_por:LOCS[sesion.sucursal].short})));
+      (typeof v === 'object')
+        ? db.rpc('lfi_ajustar_cajas', {p_suc:who, p_insumo:id, p_desglose:v, p_por:quien()})
+        : db.rpc('lfi_ajustar', {p_suc:who, p_insumo:id, p_nueva:v, p_por:quien()})));
     fallas += res.filter(r => r.error).length;
   }
   const n = entradas.length;
@@ -1104,6 +1173,7 @@ function llenarCerosNoContados(){
 
 /* ===== Piezas de UI ===== */
 const cats = () => [...new Set(CAT.map(i => i.categoria))];
+const provs = () => [...new Set(CAT.map(i => i.proveedor).filter(Boolean))].sort();
 function filtra(){
   return CAT.filter(i => {
     if (filtroCat && i.categoria !== filtroCat) return false;
@@ -1140,11 +1210,35 @@ function vInventario(){
       if (!items.length) continue;
       html += `<div class="seccion">${esc(c)}</div>`;
       for (const i of items){
+        const multi = esMulti(i);
         const val = conteo[i.id];
         const hecho = val !== undefined;
         const antes = stock(loc,i.id);
-        const dif = hecho ? val - antes : 0;
         const pack = tienePack(i);
+
+        if (multi){
+          const obj = (hecho && typeof val === 'object') ? val : stockDesglose(loc, i.id);
+          const totalNuevo = cajasDe(i.id).reduce((a,p) => a + (Number(obj[p.id])||0), 0);
+          html += `<div class="cnt ${hecho?'hecho':''}">
+            <div class="ctxt">
+              <div class="nm">${esc(i.nombre)} <span class="pill granel">cajas</span></div>
+              <div class="cmeta">
+                <span class="mono">antes: ${stockCajas(loc,i.id)} cajas</span>
+                ${hecho ? `<span class="cdif eq">ahora ${totalNuevo} cajas</span>` : ''}
+              </div>
+            </div>
+            <div class="ccampos">${cajasDe(i.id).map(p => `
+              <div class="campo"><label>${esc(p.nombre)}</label>
+                <input class="cinput chico" type="number" inputmode="numeric" min="0"
+                  value="${(obj[p.id] ?? '') }" placeholder="0"
+                  onfocus="this.select()" oninput="capturarCaja('${i.id}','${p.id}',this.value)"></div>`).join('')}
+            </div>
+          </div>`;
+          idx++;
+          continue;
+        }
+
+        const dif = hecho ? val - antes : 0;
         html += `<div class="cnt ${hecho?'hecho':''}">
           <div class="ctxt">
             <div class="nm">${esc(i.nombre)}</div>
@@ -1339,50 +1433,74 @@ function vRequerimiento(){
 }
 
 /* ===== Comisariato: qué comprar y por qué ===== */
+function filaNecesidad(n){
+  const pack = tienePack(n.i), f = Number(n.i.factor);
+  const packs = pack ? Math.ceil(n.comprar / f) : n.comprar;
+  const multi = esMulti(n.i) && n.comprarCajas;
+  const totCajas = multi ? Object.values(n.comprarCajas).reduce((a,b)=>a+b,0) : 0;
+  const txtCajas = multi ? cajasDe(n.i.id).filter(p => n.comprarCajas[p.id]>0)
+    .map(p => `${n.comprarCajas[p.id]} de ${p.nombre.replace('Caja ','').replace(' kg','kg')}`).join(' + ') : '';
+  return `<div class="nfila ${n.i.diario?'dia':''}">
+    <div class="ntxt">
+      <div class="nm">${esc(n.i.nombre)}${n.i.diario ? ' <span class="pill dia">diario</span>' : ''}${multi ? ' <span class="pill granel">cajas</span>' : ''}</div>
+      <div class="nwhy">
+        ${Object.keys(n.piden).length
+          ? 'Piden: ' + Object.entries(n.piden).map(([t,c]) => `<b>${LOCS[t].short} ${c}</b>`).join(' · ')
+          : '<span style="color:var(--muted)">Nadie ha pedido; es para reponer tu par</span>'}
+        <br><span class="mono">tienes ${fmtCant(n.i,n.hay)} · par ${n.i.par_com} ${esc(n.i.unidad)}</span>
+        ${pack ? `<br><span class="mono">faltan ${fmtCant(n.i,n.comprar)} ${esc(n.i.unidad)} → ${packs} ${esc(n.i.empaque)}${packs!==1?'s':''}</span>` : ''}
+        ${multi ? `<br><span class="mono">comprar: ${txtCajas}</span>` : ''}
+      </div>
+    </div>
+    <div class="ncomprar">
+      <span class="ncant mono">${multi ? totCajas : packs}</span>
+      <span class="nuni">${multi ? 'cajas' : (pack ? esc(n.i.empaque)+(packs!==1?'s':'') : esc(n.i.unidad))}</span>
+    </div>
+  </div>`;
+}
+
 function vComprar(){
   const ns = necesidades();
-  const porProv = {};
-  ns.forEach(n => { const p = n.i.proveedor || 'Sin proveedor asignado'; (porProv[p] = porProv[p] || []).push(n); });
+  let bloques = '';
 
-  const bloques = Object.entries(porProv).map(([p, items]) => `
-    <div class="card ce" style="padding:0;overflow:hidden;margin-bottom:12px">
-      <div class="provbar">
-        <b>${esc(p)}</b>
-        <span class="mono">${items.length} ${items.length===1?'insumo':'insumos'}</span>
-      </div>
-      ${items.map(n => { const pack = tienePack(n.i), f = Number(n.i.factor);
-        const packs = pack ? Math.ceil(n.comprar / f) : n.comprar;
-        const combo = tienePres(n.i.id) ? mejorCombo(n.i.id, n.comprar) : null;
-        return `<div class="nfila ${n.i.diario?'dia':''}">
-        <div class="ntxt">
-          <div class="nm">${esc(n.i.nombre)}${n.i.diario ? ' <span class="pill dia">diario</span>' : ''}${combo ? ' <span class="pill granel">por caja</span>' : ''}</div>
-          <div class="nwhy">
-            ${Object.keys(n.piden).length
-              ? 'Piden: ' + Object.entries(n.piden).map(([t,c]) => `<b>${LOCS[t].short} ${c}</b>`).join(' · ')
-              : '<span style="color:var(--muted)">Nadie ha pedido; es para reponer tu par</span>'}
-            <br><span class="mono">tienes ${n.hay} · par ${n.i.par_com} ${esc(n.i.unidad)}</span>
-            ${pack ? `<br><span class="mono">faltan ${n.comprar} ${esc(n.i.unidad)} → ${packs} ${esc(n.i.empaque)}${packs!==1?'s':''}</span>` : ''}
-            ${combo ? `<br><span class="mono">faltan ${n.comprar} ${esc(n.i.unidad)} → ${combo.texto} = ${combo.total} ${esc(n.i.unidad)}</span>` : ''}
-          </div>
+  if (compView === 'cat'){
+    // Agrupado por CATEGORÍA (para escanear rápido)
+    const porCat = {};
+    ns.forEach(n => { (porCat[n.i.categoria] = porCat[n.i.categoria] || []).push(n); });
+    bloques = Object.entries(porCat).sort().map(([c, items]) => `
+      <div class="card ce" style="padding:0;overflow:hidden;margin-bottom:12px">
+        <div class="provbar" style="background:var(--fresa)"><b>${esc(c)}</b>
+          <span class="mono">${items.length} ${items.length===1?'insumo':'insumos'}</span></div>
+        ${items.map(filaNecesidad).join('')}
+      </div>`).join('');
+  } else {
+    // Agrupado por PROVEEDOR (para generar la orden)
+    const porProv = {};
+    ns.forEach(n => { const p = n.i.proveedor || 'Sin proveedor asignado'; (porProv[p] = porProv[p] || []).push(n); });
+    bloques = Object.entries(porProv).map(([p, items]) => `
+      <div class="card ce" style="padding:0;overflow:hidden;margin-bottom:12px">
+        <div class="provbar"><b>${esc(p)}</b>
+          <span class="mono">${items.length} ${items.length===1?'insumo':'insumos'}</span></div>
+        ${items.map(filaNecesidad).join('')}
+        <div class="expbar sm" style="padding:10px 12px;background:#FFFAF9;margin:0">
+          <button class="btn sm ghost" onclick="copiar(textoProveedor('${esc(p).replace(/'/g,"\\'")}'))">📋 Copiar</button>
+          <button class="btn sm" onclick="generarOrden('${esc(p).replace(/'/g,"\\'")}')">Generar orden</button>
         </div>
-        <div class="ncomprar">
-          <span class="ncant mono">${combo ? combo.cajas : packs}</span>
-          <span class="nuni">${combo ? 'cajas' : (pack ? esc(n.i.empaque)+(packs!==1?'s':'') : esc(n.i.unidad))}</span>
-        </div>
-      </div>`; }).join('')}
-      <div class="expbar sm" style="padding:10px 12px;background:#FFFAF9;margin:0">
-        <button class="btn sm ghost" onclick="copiar(textoProveedor('${esc(p).replace(/'/g,"\\'")}'))">📋 Copiar</button>
-        <button class="btn sm" onclick="generarOrden('${esc(p).replace(/'/g,"\\'")}')">Generar orden</button>
-      </div>
-    </div>`).join('');
+      </div>`).join('');
+  }
 
   return `<h2 class="page">Comprar</h2>
-  <p class="sub">Aquí llega solo lo que <b>no puedes cubrir con tu bodega</b>. Si una tienda pidió algo y ya lo tienes, no aparece: nomás lo surtes. <b>Cada proveedor genera su propia orden</b>, así la fresa la recibes hoy y los desechables cuando lleguen.</p>
+  <p class="sub">Solo lo que <b>no puedes cubrir con tu bodega</b>. Agrúpalo como te sea más fácil de revisar; la orden se genera por proveedor.</p>
   ${ns.length ? `
+    <div class="segbar">
+      <button class="${compView==='prov'?'on':''}" onclick="compView='prov';render()">Por proveedor</button>
+      <button class="${compView==='cat'?'on':''}" onclick="compView='cat';render()">Por categoría</button>
+    </div>
     <div class="expbar">
       <button class="btn sm ghost" onclick="descargarCSV('compras_${hoy()}', csvNecesidades())">⬇︎ Excel de todo</button>
       <button class="btn sm dark" onclick="generarTodas()">Generar todas las órdenes</button>
     </div>
+    ${compView==='cat' ? '<p class="sub" style="margin-top:2px;font-size:12px">Para generar la orden de un proveedor, cámbiate a <b>Por proveedor</b>.</p>' : ''}
     ${bloques}
   ` : `<div class="card empty"><b>No necesitas comprar nada</b>Lo que las tiendas pidieron ya lo tienes en bodega, y estás en tu nivel par. Ve a Pedidos y súrtelos.</div>`}`;
 }
@@ -1392,8 +1510,15 @@ async function crearOrden(prov, items){
     .insert({tipo:'compra', sucursal:'centro', fecha:hoy(), estado:'aprobado', proveedor:prov}).select().single();
   if (error) return false;
   await db.from('lfi_pedido_lineas').insert(items.map(n => {
-    // Cajas fijas: se redondea a la mejor combinación. Empaque fijo: al paquete completo.
-    if (tienePres(n.i.id)){
+    // Fresa multi: comprar exactamente los tamaños de caja que faltan
+    if (esMulti(n.i) && n.comprarCajas){
+      const tot = Object.values(n.comprarCajas).reduce((a,b)=>a+b,0);
+      const txt = cajasDe(n.i.id).filter(p => n.comprarCajas[p.id]>0)
+        .map(p => `${n.comprarCajas[p.id]} de ${p.nombre.replace('Caja ','').replace(' kg','kg')}`).join(' + ');
+      return {pedido_id: ped.id, insumo_id: n.i.id, cant: tot, aprob: tot, desglose: n.comprarCajas, nota: txt};
+    }
+    // Cajas fijas viejas (granel con presentaciones): mejor combinación
+    if (tienePres(n.i.id) && !esMulti(n.i)){
       const combo = mejorCombo(n.i.id, n.comprar);
       return {pedido_id: ped.id, insumo_id: n.i.id, cant: combo.total, aprob: combo.total, nota: combo.texto};
     }
@@ -1511,6 +1636,10 @@ function vPedidos(){
         <span class="stt ${r.estado}">${r.estado}</span>
         <span class="mono" style="margin-left:auto">${r.fecha}</span>
       </div>
+      <div class="quienes">
+        ${r.pedido_por ? `<span>📝 Pidió: <b>${esc(r.pedido_por)}</b></span>` : ''}
+        ${r.recibido_por && ['surtido'].includes(r.estado) ? `<span>🚚 Surtió: <b>${esc(r.recibido_por)}</b></span>` : ''}
+      </div>
       <div class="lines">${lines || '<div class="empty" style="padding:16px">Pedido vacío</div>'}</div>
       ${editable ? selectorInsumos(r.id) : ''}
       ${isDir() ? `<div class="row" style="justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)">
@@ -1550,7 +1679,28 @@ function vCompras(){
         const cantPack = pack ? Math.round(Number(l.aprob) / f) : Number(l.aprob);
         const precioPack = pack ? pu * f : pu;
 
-        // Insumo con cajas fijas (fresa): selector por presentación
+        // Insumo multi (fresa): editar cajas por tamaño, guardadas en desglose
+        if (esMulti(i)){
+          const dg = l.desglose || {};
+          const kg = cajasDe(l.insumo_id).reduce((a,pr) => a + (Number(dg[pr.id])||0)*Number(pr.contiene), 0);
+          return `<div class="pl compra">
+            <span class="n">${esc(i.nombre)} <span class="pill granel">cajas</span>
+              <span class="sub2">${l.nota ? esc(l.nota) + ' · ' : ''}${kg} kg · ${money(pu)}/${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}</span></span>
+            ${abierta
+              ? `<div class="cajas">
+                   ${cajasDe(l.insumo_id).map(pr => `<div><label>${esc(pr.nombre)}</label>
+                       <input type="number" inputmode="numeric" id="caja-${l.id}-${pr.id}" value="${dg[pr.id]||''}" placeholder="0"
+                         class="mono" onchange="setCajas(${l.id}, '${l.insumo_id}')"></div>`).join('')}
+                   <div><label>Precio ${esc(i.unidad)}</label>
+                     <input type="number" inputmode="decimal" step="0.01" value="${l.precio ?? ''}" placeholder="${i.costo}"
+                       class="mono precio" onchange="setPrecio(${l.id}, this.value)"></div>
+                   <button class="x" onclick="borrarLinea(${l.id})" aria-label="Quitar">×</button>
+                 </div>`
+              : `<span class="mono" style="font-weight:700">${l.surtido ?? l.aprob} cajas</span>`}
+          </div>`;
+        }
+
+        // Insumo con cajas fijas viejas (granel + presentaciones, no multi)
         if (pres){
           const lista = PRES[l.insumo_id] || [];
           return `<div class="pl compra">
@@ -1605,6 +1755,7 @@ function vCompras(){
         <span class="stt ${r.estado}">${r.estado === 'aprobado' ? 'por recibir' : r.estado}</span>
         <span class="mono" style="margin-left:auto">${r.fecha}</span>
       </div>
+      ${r.recibido_por && r.estado==='recibido' ? `<div class="quienes"><span>📦 Recibió: <b>${esc(r.recibido_por)}</b></span></div>` : ''}
       <div class="lines">${bloques || '<div class="empty" style="padding:16px">Orden vacía</div>'}</div>
       ${abierta ? selectorInsumos(r.id) : ''}
       <div class="row" style="justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)">
@@ -1722,7 +1873,7 @@ function vCatalogo(){
           ? `<div style="grid-column:1 / -1"><label>Referencia de compra (texto para el proveedor)</label><input type="text" value="${esc(i.empaque_ref)}" placeholder="ej: caja de 4 a 6 kg" onchange="editarInsumo('${i.id}','empaque_ref',this.value)"></div>`
           : `<div><label>Se compra por</label><input type="text" value="${esc(i.empaque)}" placeholder="suelto" onchange="editarInsumo('${i.id}','empaque',this.value)"></div>
              <div><label>${esc(i.unidad)} por ${esc(i.empaque || 'empaque')}</label><input type="number" inputmode="numeric" value="${f}" onchange="editarInsumo('${i.id}','factor',this.value)"></div>`}
-        <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" value="${esc(i.proveedor)}" placeholder="¿Quién lo surte?" onchange="editarInsumo('${i.id}','proveedor',this.value)"></div>
+        <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" list="provs-list" value="${esc(i.proveedor)}" placeholder="¿Quién lo surte?" onchange="editarInsumo('${i.id}','proveedor',this.value)"></div>
         ${nivelCampos}
       </div>
       <div class="row" style="gap:14px;margin-top:10px">
@@ -1746,7 +1897,7 @@ function vCatalogo(){
       <div><label>Unidades por empaque</label><input type="number" inputmode="numeric" id="ni-factor" value="1"></div>
       <div><label>Costo por unidad</label><input type="number" inputmode="decimal" id="ni-costo" placeholder="0"></div>
       <div><label>Par por tienda</label><input type="number" inputmode="numeric" id="ni-par" value="1"></div>
-      <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" id="ni-prov" placeholder="¿Quién lo surte?"></div>
+      <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" id="ni-prov" list="provs-list" placeholder="¿Quién lo surte?"></div>
       <div style="grid-column:1 / -1">
         <label class="chk"><input type="checkbox" id="ni-granel"> <span>Se compra a granel o por caja de peso variable (ej: fresa). El campo “se compra por” es solo una nota para el proveedor.</span></label>
       </div>
@@ -1755,6 +1906,7 @@ function vCatalogo(){
       </div>
     </div>
     <datalist id="cats-list">${cats().map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+    <datalist id="provs-list">${provs().map(p => `<option value="${esc(p)}">`).join('')}</datalist>
     <button class="btn wide" onclick="nuevoInsumo()" style="margin-top:12px">Agregar a las 3 tiendas</button>
     <div class="packnote">Se da de alta en las tres tiendas con el mismo par. Después lo ajustas tienda por tienda.</div>
   </div>
@@ -1779,7 +1931,7 @@ function render(){
 
   document.getElementById('ctxslot').innerHTML = isDir()
     ? `<select class="aqui" id="who">${Object.keys(LOCS).map(l => `<option value="${l}" ${who===l?'selected':''}>${LOCS[l].short}</option>`).join('')}</select>`
-    : `<span class="aqui">${LOCS[sesion.sucursal].short}</span>`;
+    : `<span class="aqui">${esc(quien())} · ${LOCS[sesion.sucursal].short}</span>`;
   if (isDir()) document.getElementById('who').onchange = async e => {
     who = e.target.value; draft = {}; q=''; filtroCat=''; tab='inv';
     await cargar(); render();
