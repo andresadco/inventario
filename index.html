@@ -286,6 +286,8 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 .chk input{width:20px;height:20px;accent-color:var(--fresa);flex:none;margin-top:1px}
 #altabox{display:none}
 #altabox.on{display:block}
+#npbox{display:none}
+#npbox.on{display:block}
 
 /* Barra de exportar */
 .expbar{display:flex;gap:8px;margin:10px 0 0;flex-wrap:wrap}
@@ -471,7 +473,7 @@ const LOCS = {
 };
 const TIENDAS = ['moctezuma','narvarte','balbuena'];
 
-let CAT=[], INV={}, INVD={}, NIV={}, MOV=[], REQ=[], PRES={}, draft={};
+let CAT=[], INV={}, INVD={}, NIV={}, MOV=[], REQ=[], PRES={}, EQUIPO=[], draft={};
 let sesion=null, who='moctezuma', tab='inv', q='', filtroCat='', cargando=false;
 let modoConteo=false, conteo={};
 let compView='prov';   // conteo = capturas pendientes de guardar
@@ -592,6 +594,11 @@ async function cargar(silencioso){
     pres.data.forEach(p => { (PRES[p.insumo_id] = PRES[p.insumo_id] || []).push(p); });
     REQ = peds.data.map(p => ({...p, lineas: lins.data.filter(l => l.pedido_id === p.id)}));
     MOV = movs.data;
+    // El equipo (personas + PINs) solo lo carga dirección
+    if (isDir()){
+      const { data:eq } = await db.from('lfi_accesos').select('*').order('sucursal').order('nombre');
+      EQUIPO = eq || [];
+    }
     setDot('');
   } catch(e){
     console.error(e); setDot('err'); toast('Sin conexión con la base de datos.');
@@ -1034,6 +1041,73 @@ async function borrarInsumo(id){
   await db.from('lfi_insumos').update({activo:false}).eq('id',id);
   toast('Insumo dado de baja');
   await cargar(true); render();
+}
+
+/* ===== Equipo: personas con PIN ===== */
+async function nuevaPersona(){
+  const nombre = document.getElementById('np-nombre').value.trim();
+  const suc = document.getElementById('np-suc').value;
+  const pin = document.getElementById('np-pin').value.trim();
+  if (!nombre){ toast('Ponle nombre a la persona.'); return; }
+  if (!/^\d{4}$/.test(pin)){ toast('El PIN debe ser de 4 números.'); return; }
+  if (EQUIPO.some(p => p.sucursal === suc && p.pin === pin)){ toast('Ya hay alguien con ese PIN en esa sucursal.'); return; }
+  const rol = suc === 'centro' ? 'direccion' : 'tienda';
+  setDot('busy');
+  const { error } = await db.from('lfi_accesos').insert({sucursal:suc, pin, rol, nombre});
+  if (error){ toast('No se pudo agregar. ¿PIN repetido?'); setDot('err'); return; }
+  document.getElementById('np-nombre').value = '';
+  document.getElementById('np-pin').value = '';
+  toast(nombre + ' agregado a ' + LOCS[suc].short);
+  await cargar(true); render();
+}
+async function editarPersona(id, campo, val){
+  const patch = {}; patch[campo] = val.trim();
+  if (campo === 'pin' && !/^\d{4}$/.test(val.trim())){ toast('El PIN debe ser de 4 números.'); render(); return; }
+  setDot('busy');
+  const { error } = await db.from('lfi_accesos').update(patch).eq('id',id);
+  if (error){ toast('No se pudo guardar.'); setDot('err'); }
+  await cargar(true); render();
+}
+async function borrarPersona(id, nombre){
+  if (EQUIPO.filter(p => p.rol === 'direccion').length === 1 && EQUIPO.find(p => p.id === id)?.rol === 'direccion'){
+    toast('No puedes quitar al único acceso de dirección.'); return;
+  }
+  if (!confirm(`¿Quitar a ${nombre}? Ya no va a poder entrar con su PIN.`)) return;
+  setDot('busy');
+  await db.from('lfi_accesos').delete().eq('id',id);
+  toast(nombre + ' dado de baja');
+  await cargar(true); render();
+}
+
+function vEquipo(){
+  const porSuc = {};
+  EQUIPO.forEach(p => { (porSuc[p.sucursal] = porSuc[p.sucursal] || []).push(p); });
+  const bloques = Object.keys(LOCS).map(suc => {
+    const gente = porSuc[suc] || [];
+    return `<div class="seccion">${LOCS[suc].n}</div>
+      ${gente.length ? gente.map(p => `<div class="card ce" style="padding:12px">
+        <div class="cgrid" style="grid-template-columns:2fr 1fr auto;align-items:end">
+          <div><label>Nombre</label><input type="text" value="${esc(p.nombre)}" onchange="editarPersona('${p.id}','nombre',this.value)"></div>
+          <div><label>PIN</label><input type="text" inputmode="numeric" maxlength="4" value="${esc(p.pin)}" class="mono" onchange="editarPersona('${p.id}','pin',this.value)"></div>
+          <button style="color:#CFB6BC;font-size:22px;padding:8px" onclick="borrarPersona('${p.id}','${esc(p.nombre).replace(/'/g,"\\'")}')" aria-label="Quitar">×</button>
+        </div>
+      </div>`).join('') : '<div class="card empty" style="padding:16px">Nadie todavía</div>'}`;
+  }).join('');
+
+  return `<h2 class="page">Equipo</h2>
+  <p class="sub">Cada persona entra con su propio PIN. Así <b>todo lo que hace queda con su nombre</b>: quién contó, quién pidió, quién recibió. El PIN es de 4 números.</p>
+  <button class="btn wide" onclick="document.getElementById('npbox').classList.toggle('on')" style="margin-bottom:12px">+ Agregar persona</button>
+  <div class="card ce" id="npbox">
+    <span class="eyebrow">Persona nueva</span>
+    <div class="cgrid" style="margin-top:10px;grid-template-columns:1fr 1fr">
+      <div style="grid-column:1 / -1"><label>Nombre</label><input type="text" id="np-nombre" placeholder="Ej: María López"></div>
+      <div><label>Sucursal</label><select id="np-suc">${Object.keys(LOCS).map(l => `<option value="${l}">${LOCS[l].short}</option>`).join('')}</select></div>
+      <div><label>PIN (4 números)</label><input type="text" id="np-pin" inputmode="numeric" maxlength="4" placeholder="0000" class="mono"></div>
+    </div>
+    <button class="btn wide" onclick="nuevaPersona()" style="margin-top:12px">Agregar al equipo</button>
+    <div class="packnote">Quien esté en <b>Comisariato</b> tiene rol de dirección (ve precios, compras y todo). El resto solo ve su tienda.</div>
+  </div>
+  ${bloques}`;
 }
 
 /* ===== Hoja de comanda ===== */
@@ -1915,7 +1989,7 @@ function vCatalogo(){
 }
 
 /* ===== Render ===== */
-const ICONOS = {inv:'📦', req:'📝', ped:'🚚', com:'🛒', pan:'📊', mov:'🕓', cat:'⚙️'};
+const ICONOS = {inv:'📦', req:'📝', ped:'🚚', com:'🛒', pan:'📊', mov:'🕓', cat:'⚙️', eq:'👥'};
 function render(){
   const pend = REQ.filter(r => r.tipo==='tienda' && r.estado==='enviado').length;
   const rec  = REQ.filter(r => r.tipo==='compra' && r.estado==='aprobado').length;
@@ -1924,10 +1998,10 @@ function render(){
   const tabs = [['inv','Inventario',0], ['req', verCentro()?'Comprar':'Pedir', verCentro()?porComprar:0], ['ped','Pedidos', isDir()?pend:0]];
   if (isDir()) tabs.push(['com','Compras', rec], ['pan','Panel',0]);
   tabs.push(['mov','Historial',0]);
-  if (isDir()) tabs.push(['cat','Catálogo',0]);
+  if (isDir()) tabs.push(['cat','Catálogo',0], ['eq','Equipo',0]);
 
-  const views = {inv:vInventario, req:vRequerimiento, ped:vPedidos, com:vCompras, pan:vPanel, mov:vMovimientos, cat:vCatalogo};
-  if (!views[tab] || (['com','pan','cat'].includes(tab) && !isDir())) tab = 'inv';
+  const views = {inv:vInventario, req:vRequerimiento, ped:vPedidos, com:vCompras, pan:vPanel, mov:vMovimientos, cat:vCatalogo, eq:vEquipo};
+  if (!views[tab] || (['com','pan','cat','eq'].includes(tab) && !isDir())) tab = 'inv';
 
   document.getElementById('ctxslot').innerHTML = isDir()
     ? `<select class="aqui" id="who">${Object.keys(LOCS).map(l => `<option value="${l}" ${who===l?'selected':''}>${LOCS[l].short}</option>`).join('')}</select>`
