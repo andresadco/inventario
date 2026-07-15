@@ -307,6 +307,11 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 .diario .btn:active{background:#FFE9ED}
 .dnota{font-size:11.5px;color:rgba(255,255,255,.8);margin-top:9px;line-height:1.45}
 .pill.dia{background:#FFE3E9;color:var(--fresa-dark)}
+.pill.granel{background:#EDE7F6;color:#5B3FA8}
+.cajas{display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;flex:none}
+.cajas label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:#5B3FA8;margin-bottom:3px;text-align:center}
+.cajas input{width:62px;padding:9px 6px;text-align:center;border-color:#C9B8E8;background:#F7F3FD}
+.cajas .precio{border-color:var(--azul);background:#F5FAFC}
 
 /* Panel de necesidades del comisariato */
 .provbar{
@@ -443,7 +448,7 @@ const LOCS = {
 };
 const TIENDAS = ['moctezuma','narvarte','balbuena'];
 
-let CAT=[], INV={}, NIV={}, MOV=[], REQ=[], draft={};
+let CAT=[], INV={}, NIV={}, MOV=[], REQ=[], PRES={}, draft={};
 let sesion=null, who='moctezuma', tab='inv', q='', filtroCat='', cargando=false;
 let modoConteo=false, conteo={};   // conteo = capturas pendientes de guardar
 
@@ -506,12 +511,12 @@ async function entrar(){
   if (error){ err.textContent = 'No hay conexión con la base.'; return; }
   if (!data){ err.textContent = 'PIN incorrecto para esa sucursal.'; document.getElementById('lg-pin').value=''; return; }
   sesion = {sucursal:data.sucursal, rol:data.rol};
-  sessionStorage.setItem('lfi_sesion', JSON.stringify(sesion));
+  localStorage.setItem('lfi_sesion', JSON.stringify(sesion));
   who = sesion.sucursal;
   await arrancar();
 }
 function salir(){
-  sessionStorage.removeItem('lfi_sesion'); sesion = null;
+  localStorage.removeItem('lfi_sesion'); sesion = null;
   document.getElementById('shell').style.display = 'none';
   document.getElementById('login').style.display = 'flex';
   document.getElementById('lg-pin').value = '';
@@ -531,21 +536,23 @@ async function cargar(silencioso){
   cargando = true;
   if (!silencioso) setDot('busy');
   try{
-    const [ins,stk,niv,peds,lins,movs] = await Promise.all([
+    const [ins,stk,niv,peds,lins,movs,pres] = await Promise.all([
       db.from('lfi_insumos').select('*').eq('activo',true).order('categoria').order('nombre'),
       db.from('lfi_stock').select('*'),
       db.from('lfi_niveles').select('*'),
       db.from('lfi_pedidos').select('*').order('created_at',{ascending:false}).limit(50),
       db.from('lfi_pedido_lineas').select('*'),
       db.from('lfi_movimientos').select('*').eq('sucursal',who).order('created_at',{ascending:false}).limit(150),
+      db.from('lfi_presentaciones').select('*').order('orden'),
     ]);
-    const bad = [ins,stk,niv,peds,lins,movs].find(r => r.error);
+    const bad = [ins,stk,niv,peds,lins,movs,pres].find(r => r.error);
     if (bad) throw bad.error;
     CAT = ins.data;
-    INV = {}; NIV = {};
+    INV = {}; NIV = {}; PRES = {};
     Object.keys(LOCS).forEach(l => { INV[l] = {}; NIV[l] = {}; });
     stk.data.forEach(s => { if (INV[s.sucursal]) INV[s.sucursal][s.insumo_id] = Number(s.cantidad); });
     niv.data.forEach(n => { if (NIV[n.sucursal]) NIV[n.sucursal][n.insumo_id] = n; });
+    pres.data.forEach(p => { (PRES[p.insumo_id] = PRES[p.insumo_id] || []).push(p); });
     REQ = peds.data.map(p => ({...p, lineas: lins.data.filter(l => l.pedido_id === p.id)}));
     MOV = movs.data;
     setDot('');
@@ -637,6 +644,47 @@ async function setPrecio(lid,val){
   setDot('busy');
   const p = Number(val);
   await db.from('lfi_pedido_lineas').update({precio: p > 0 ? p : null}).eq('id',lid);
+  await cargar(true); render();
+}
+const tienePres = id => (PRES[id] || []).length > 0;
+
+/* Mejor combinación de cajas fijas para cubrir 'meta' con el menor sobrante posible */
+function mejorCombo(insumoId, meta){
+  const pres = (PRES[insumoId] || []).slice().sort((a,b) => b.contiene - a.contiene);
+  if (!pres.length || meta <= 0) return null;
+  const mayor = Number(pres[0].contiene);
+  let best = null;
+  // Barrido simple: hasta ceil(meta/mayor)+2 cajas del tamaño grande
+  const maxG = Math.ceil(meta / mayor) + 2;
+  for (let g = 0; g <= maxG; g++){
+    for (const chico of pres.slice(1).concat([{contiene:0}])){
+      const c = Number(chico.contiene);
+      const falta = meta - g * mayor;
+      const nch = c > 0 ? Math.max(0, Math.ceil(falta / c)) : 0;
+      const total = g * mayor + nch * c;
+      if (total < meta) continue;
+      const sobra = total - meta;
+      const cajas = g + nch;
+      if (!best || sobra < best.sobra || (sobra === best.sobra && cajas < best.cajas)){
+        const partes = [];
+        if (g > 0) partes.push(`${g}×${pres[0].nombre}`);
+        if (nch > 0) partes.push(`${nch}×${chico.nombre}`);
+        best = {total, sobra, cajas, texto: partes.join(' + ') || '—'};
+      }
+    }
+  }
+  return best;
+}
+/* Compra por cajas de tamaño fijo: suma kilos y guarda el detalle (2×Caja 4 kg + 1×Caja 6 kg) */
+async function setCajas(lid, insumoId){
+  const pres = PRES[insumoId] || [];
+  let total = 0; const detalle = [];
+  pres.forEach(p => {
+    const n = Math.max(0, Number(document.getElementById(`caja-${lid}-${p.id}`)?.value)||0);
+    if (n > 0){ total += n * Number(p.contiene); detalle.push(`${n}×${p.nombre}`); }
+  });
+  setDot('busy');
+  await db.from('lfi_pedido_lineas').update({aprob: total, nota: detalle.join(' + ') || null}).eq('id',lid);
   await cargar(true); render();
 }
 async function borrarLinea(lid){
@@ -740,9 +788,16 @@ function csvPedido(r){
   return filas;
 }
 function pedirEn(i, unidades){
-  if (!tienePack(i)) return `${unidades} ${i.unidad}`;
-  const p = Math.ceil(unidades / Number(i.factor));
-  return `${p} ${i.empaque}${p!==1?'s':''} (de ${i.factor})`;
+  if (tienePres(i.id)){
+    const combo = mejorCombo(i.id, unidades);
+    return combo ? `${combo.texto} (${combo.total} ${i.unidad})` : `${unidades} ${i.unidad}`;
+  }
+  if (tienePack(i)){
+    const p = Math.ceil(unidades / Number(i.factor));
+    return `${p} ${i.empaque}${p!==1?'s':''} (de ${i.factor})`;
+  }
+  if (i.granel && i.empaque_ref) return `${unidades} ${i.unidad} (${i.empaque_ref})`;
+  return `${unidades} ${i.unidad}`;
 }
 function textoProveedor(prov){
   const items = necesidades().filter(n => (n.i.proveedor || 'Sin proveedor asignado') === prov);
@@ -826,8 +881,8 @@ async function recibir(rid){
 }
 async function editarInsumo(id,campo,val){
   let v;
-  if (campo === 'diario') v = !!val;
-  else if (['nombre','categoria','unidad','proveedor','empaque'].includes(campo)) v = (val === '' ? null : val);
+  if (campo === 'diario' || campo === 'granel') v = !!val;
+  else if (['nombre','categoria','unidad','proveedor','empaque','empaque_ref'].includes(campo)) v = (val === '' ? null : val);
   else if (campo === 'factor') v = Math.max(1, Number(val)||1);
   else v = Number(val)||0;
   const patch = {}; patch[campo] = v;
@@ -836,7 +891,7 @@ async function editarInsumo(id,campo,val){
   const { error } = await db.from('lfi_insumos').update(patch).eq('id',id);
   setDot(error ? 'err' : '');
   if (error) toast('No se guardó el cambio.');
-  else if (['factor','empaque','diario'].includes(campo)) render();
+  else if (['factor','empaque','diario','granel'].includes(campo)) render();
 }
 async function editarNivel(loc,id,campo,val){
   const n = nivel(loc,id);
@@ -883,12 +938,20 @@ function toggleConteo(){
   if (modoConteo && Object.keys(conteo).length && !confirm('Tienes capturas sin guardar. ¿Salir sin guardarlas?')) return;
   modoConteo = !modoConteo;
   conteo = {}; q = ''; filtroCat = '';
+  if (modoConteo){
+    if (recuperarConteo() && Object.keys(conteo).length)
+      toast('Recuperé tu conteo de hoy sin guardar. Sigue donde quedaste.');
+    else
+      toast('Captura la cantidad y dale Enter para pasar al siguiente.');
+  } else {
+    respaldarConteo();
+  }
   window.scrollTo(0,0); render();
-  if (modoConteo) toast('Captura la cantidad y dale Enter para pasar al siguiente.');
 }
 function capturar(id, val){
   const v = val === '' ? undefined : Math.max(0, Number(val)||0);
   if (v === undefined) delete conteo[id]; else conteo[id] = v;
+  respaldarConteo();
   refrescarProgreso();
 }
 function capturarPack(id){
@@ -897,7 +960,26 @@ function capturarPack(id){
   const s = document.getElementById('s-'+id).value;
   if (p === '' && s === '') delete conteo[id];
   else conteo[id] = desdePack(i, p, s);
+  respaldarConteo();
   refrescarProgreso();
+}
+/* Respaldo local: si la app se recarga a media captura, no se pierde el conteo */
+function respaldarConteo(){
+  try{
+    if (Object.keys(conteo).length)
+      localStorage.setItem('lfi_conteo_'+who, JSON.stringify({fecha:hoy(), datos:conteo}));
+    else localStorage.removeItem('lfi_conteo_'+who);
+  }catch(e){}
+}
+function recuperarConteo(){
+  try{
+    const raw = localStorage.getItem('lfi_conteo_'+who);
+    if (!raw) return false;
+    const g = JSON.parse(raw);
+    if (g.fecha !== hoy() || !g.datos || !Object.keys(g.datos).length){ localStorage.removeItem('lfi_conteo_'+who); return false; }
+    conteo = g.datos;
+    return true;
+  }catch(e){ return false; }
 }
 function refrescarProgreso(){
   const h = document.getElementById('cnt-hechos');
@@ -925,6 +1007,7 @@ async function guardarConteo(){
   }
   const n = entradas.length;
   conteo = {}; modoConteo = false;
+  try{ localStorage.removeItem('lfi_conteo_'+who); }catch(e){}
   toast(fallas ? `Se guardaron ${n-fallas} de ${n}. Revisa tu internet y repite los que falten.`
                : `✅ Conteo guardado: ${n} ${n===1?'insumo':'insumos'}`);
   await cargar(true); render();
@@ -1153,20 +1236,22 @@ function vComprar(){
       </div>
       ${items.map(n => { const pack = tienePack(n.i), f = Number(n.i.factor);
         const packs = pack ? Math.ceil(n.comprar / f) : n.comprar;
+        const combo = tienePres(n.i.id) ? mejorCombo(n.i.id, n.comprar) : null;
         return `<div class="nfila ${n.i.diario?'dia':''}">
         <div class="ntxt">
-          <div class="nm">${esc(n.i.nombre)}${n.i.diario ? ' <span class="pill dia">diario</span>' : ''}</div>
+          <div class="nm">${esc(n.i.nombre)}${n.i.diario ? ' <span class="pill dia">diario</span>' : ''}${combo ? ' <span class="pill granel">por caja</span>' : ''}</div>
           <div class="nwhy">
             ${Object.keys(n.piden).length
               ? 'Piden: ' + Object.entries(n.piden).map(([t,c]) => `<b>${LOCS[t].short} ${c}</b>`).join(' · ')
               : '<span style="color:var(--muted)">Nadie ha pedido; es para reponer tu par</span>'}
             <br><span class="mono">tienes ${n.hay} · par ${n.i.par_com} ${esc(n.i.unidad)}</span>
             ${pack ? `<br><span class="mono">faltan ${n.comprar} ${esc(n.i.unidad)} → ${packs} ${esc(n.i.empaque)}${packs!==1?'s':''}</span>` : ''}
+            ${combo ? `<br><span class="mono">faltan ${n.comprar} ${esc(n.i.unidad)} → ${combo.texto} = ${combo.total} ${esc(n.i.unidad)}</span>` : ''}
           </div>
         </div>
         <div class="ncomprar">
-          <span class="ncant mono">${packs}</span>
-          <span class="nuni">${pack ? esc(n.i.empaque)+(packs!==1?'s':'') : esc(n.i.unidad)}</span>
+          <span class="ncant mono">${combo ? combo.cajas : packs}</span>
+          <span class="nuni">${combo ? 'cajas' : (pack ? esc(n.i.empaque)+(packs!==1?'s':'') : esc(n.i.unidad))}</span>
         </div>
       </div>`; }).join('')}
       <div class="expbar sm" style="padding:10px 12px;background:#FFFAF9;margin:0">
@@ -1191,7 +1276,11 @@ async function crearOrden(prov, items){
     .insert({tipo:'compra', sucursal:'centro', fecha:hoy(), estado:'aprobado', proveedor:prov}).select().single();
   if (error) return false;
   await db.from('lfi_pedido_lineas').insert(items.map(n => {
-    // No se compran medias cajas: si trae empaque, se redondea al paquete completo de arriba
+    // Cajas fijas: se redondea a la mejor combinación. Empaque fijo: al paquete completo.
+    if (tienePres(n.i.id)){
+      const combo = mejorCombo(n.i.id, n.comprar);
+      return {pedido_id: ped.id, insumo_id: n.i.id, cant: combo.total, aprob: combo.total, nota: combo.texto};
+    }
     const f = Number(n.i.factor);
     const c = tienePack(n.i) ? Math.ceil(n.comprar / f) * f : n.comprar;
     return {pedido_id: ped.id, insumo_id: n.i.id, cant: c, aprob: c};
@@ -1331,17 +1420,42 @@ function vCompras(){
 
     const bloques = Object.entries(porProv).map(([p,ls]) => `<div class="provhead">${esc(p)}</div>
       ${ls.map(l => { const i = item(l.insumo_id); const pu = precioLinea(l);
-        const pack = tienePack(i), f = Number(i.factor);
+        const pack = tienePack(i), f = Number(i.factor), pres = tienePres(i.insumo_id || l.insumo_id);
         const cantPack = pack ? Math.round(Number(l.aprob) / f) : Number(l.aprob);
         const precioPack = pack ? pu * f : pu;
+
+        // Insumo con cajas fijas (fresa): selector por presentación
+        if (pres){
+          const lista = PRES[l.insumo_id] || [];
+          return `<div class="pl compra">
+            <span class="n">${esc(i.nombre)} <span class="pill granel">por caja</span>
+              <span class="sub2">${l.nota ? esc(l.nota) + ' = ' : ''}${l.aprob} ${esc(i.unidad)} · ${money(pu)}/${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}</span></span>
+            ${abierta
+              ? `<div class="cajas">
+                   ${lista.map(pr => {
+                     const actual = l.nota ? (l.nota.match(new RegExp('(\\\\d+)×'+pr.nombre.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')))||[])[1]||'' : '';
+                     return `<div><label>${esc(pr.nombre)}</label>
+                       <input type="number" inputmode="numeric" id="caja-${l.id}-${pr.id}" value="${actual}" placeholder="0"
+                         class="mono" onchange="setCajas(${l.id}, '${l.insumo_id}')"></div>`;
+                   }).join('')}
+                   <div><label>Precio ${esc(i.unidad)}</label>
+                     <input type="number" inputmode="decimal" step="0.01" value="${l.precio ?? ''}" placeholder="${i.costo}"
+                       class="mono precio" onchange="setPrecio(${l.id}, this.value)"></div>
+                   <button class="x" onclick="borrarLinea(${l.id})" aria-label="Quitar">×</button>
+                 </div>`
+              : `<span class="mono" style="font-weight:700">${l.surtido ?? l.aprob} ${esc(i.unidad)}</span>`}
+          </div>`;
+        }
+
+        const sub = pack
+          ? `${money(precioPack)} / ${esc(i.empaque)} de ${f} · ${l.aprob} ${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}`
+          : `${money(pu)} / ${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}${i.granel && i.empaque_ref ? ' · '+esc(i.empaque_ref) : ''}`;
         return `<div class="pl compra">
-          <span class="n">${esc(i.nombre)}
-            <span class="sub2">${pack
-              ? `${money(precioPack)} / ${esc(i.empaque)} de ${f} · ${l.aprob} ${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}`
-              : `${money(pu)} / ${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}`}</span></span>
+          <span class="n">${esc(i.nombre)}${i.granel ? ' <span class="pill granel">granel</span>' : ''}
+            <span class="sub2">${sub}</span></span>
           ${abierta
             ? `<div class="campos">
-                 <div><label>${pack ? esc(i.empaque)+'s' : 'Cant'}</label>
+                 <div><label>${i.granel ? esc(i.unidad)+' reales' : (pack ? esc(i.empaque)+'s' : 'Cant')}</label>
                    <input type="number" inputmode="decimal" value="${cantPack}" class="mono"
                      onchange="${pack ? `setLineaPack(${l.id},this.value)` : `setLinea(${l.id},this.value)`}"></div>
                  <div><label>Precio ${pack ? esc(i.empaque) : esc(i.unidad)}</label>
@@ -1432,14 +1546,17 @@ async function nuevoInsumo(){
   if (!nombre){ toast('Ponle nombre al insumo'); return; }
   const factor = Math.max(1, Number(v('ni-factor')) || 1);
   const empaque = v('ni-empaque');
+  const granel = document.getElementById('ni-granel').checked;
   const parT = Number(v('ni-par')) || 0;
   setDot('busy');
   const { data:ins, error } = await db.from('lfi_insumos').insert({
     nombre,
     categoria: v('ni-cat') || 'General',
     unidad:    v('ni-uni') || 'pza',
-    empaque:   factor > 1 ? (empaque || 'paquete') : null,
-    factor,
+    empaque:   (!granel && factor > 1) ? (empaque || 'paquete') : null,
+    factor:    granel ? 1 : factor,
+    granel,
+    empaque_ref: granel ? (empaque || null) : null,
     costo:     Number(v('ni-costo')) || 0,
     proveedor: v('ni-prov') || null,
     diario:    document.getElementById('ni-diario').checked,
@@ -1475,12 +1592,18 @@ function vCatalogo(){
       <div class="cgrid">
         <div><label>Unidad de uso</label><input type="text" value="${esc(i.unidad)}" onchange="editarInsumo('${i.id}','unidad',this.value)"></div>
         <div><label>Costo por ${esc(i.unidad)}</label><input type="number" inputmode="decimal" value="${i.costo}" onchange="editarInsumo('${i.id}','costo',this.value)"></div>
-        <div><label>Se compra por</label><input type="text" value="${esc(i.empaque)}" placeholder="suelto" onchange="editarInsumo('${i.id}','empaque',this.value)"></div>
-        <div><label>${esc(i.unidad)} por ${esc(i.empaque || 'empaque')}</label><input type="number" inputmode="numeric" value="${f}" onchange="editarInsumo('${i.id}','factor',this.value)"></div>
+        ${i.granel
+          ? `<div style="grid-column:1 / -1"><label>Referencia de compra (texto para el proveedor)</label><input type="text" value="${esc(i.empaque_ref)}" placeholder="ej: caja de 4 a 6 kg" onchange="editarInsumo('${i.id}','empaque_ref',this.value)"></div>`
+          : `<div><label>Se compra por</label><input type="text" value="${esc(i.empaque)}" placeholder="suelto" onchange="editarInsumo('${i.id}','empaque',this.value)"></div>
+             <div><label>${esc(i.unidad)} por ${esc(i.empaque || 'empaque')}</label><input type="number" inputmode="numeric" value="${f}" onchange="editarInsumo('${i.id}','factor',this.value)"></div>`}
         <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" value="${esc(i.proveedor)}" placeholder="¿Quién lo surte?" onchange="editarInsumo('${i.id}','proveedor',this.value)"></div>
         ${nivelCampos}
       </div>
-      ${f > 1 ? `<div class="packnote">Se compra por <b>${esc(i.empaque)}</b> de ${f} ${esc(i.unidad)}, pero se cuenta y se pide por <b>${esc(i.unidad)}</b> suelta.</div>` : ''}
+      <div class="row" style="gap:14px;margin-top:10px">
+        <label class="chk"><input type="checkbox" ${i.granel?'checked':''} onchange="editarInsumo('${i.id}','granel',this.checked)"> se compra a granel / peso variable</label>
+      </div>
+      ${i.granel ? `<div class="packnote">Se cuenta y se compra en <b>${esc(i.unidad)}</b>. Al recibir capturas el <b>peso real</b> que llegó — no se asume.</div>`
+        : (f > 1 ? `<div class="packnote">Se compra por <b>${esc(i.empaque)}</b> de ${f} ${esc(i.unidad)}, pero se cuenta y se pide por <b>${esc(i.unidad)}</b>.</div>` : '')}
     </div>`;
   }).join('');
 
@@ -1498,6 +1621,9 @@ function vCatalogo(){
       <div><label>Costo por unidad</label><input type="number" inputmode="decimal" id="ni-costo" placeholder="0"></div>
       <div><label>Par por tienda</label><input type="number" inputmode="numeric" id="ni-par" value="1"></div>
       <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" id="ni-prov" placeholder="¿Quién lo surte?"></div>
+      <div style="grid-column:1 / -1">
+        <label class="chk"><input type="checkbox" id="ni-granel"> Se compra a granel / peso variable (ej: fresa por caja de peso distinto). El campo “se compra por” se usa como referencia de texto.</label>
+      </div>
       <div style="grid-column:1 / -1">
         <label class="chk"><input type="checkbox" id="ni-diario"> Se pide todos los días (sale hasta arriba en Pedir)</label>
       </div>
@@ -1548,12 +1674,21 @@ function toast(m){
   clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 3200);
 }
 
-window.addEventListener('focus', async () => { if (sesion){ await cargar(true); render(); } });
-setInterval(async () => { if (sesion && document.visibilityState === 'visible' && !Object.keys(draft).length){ await cargar(true); render(); } }, 60000);
+function ocupado(){
+  // No refrescar si están contando, o si tienen el teclado abierto en un campo, o con borrador
+  if (modoConteo) return true;
+  if (Object.keys(conteo).length) return true;
+  if (Object.keys(draft).length) return true;
+  const a = document.activeElement;
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA')) return true;
+  return false;
+}
+window.addEventListener('focus', async () => { if (sesion && !ocupado()){ await cargar(true); render(); } });
+setInterval(async () => { if (sesion && document.visibilityState === 'visible' && !ocupado()){ await cargar(true); render(); } }, 60000);
 
 /* ===== Arranque ===== */
-const g = sessionStorage.getItem('lfi_sesion');
-if (g){ try{ sesion = JSON.parse(g); who = sesion.sucursal; arrancar(); } catch(e){ sessionStorage.removeItem('lfi_sesion'); } }
+const g = localStorage.getItem('lfi_sesion');
+if (g){ try{ sesion = JSON.parse(g); who = sesion.sucursal; arrancar(); } catch(e){ localStorage.removeItem('lfi_sesion'); } }
 </script>
 </body>
 </html>
