@@ -249,6 +249,28 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 }
 .arranque b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
 
+/* Empaque: paquetes vs unidades sueltas */
+.stepwrap{display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:none}
+.packbtns{display:flex;gap:5px}
+.packbtns button{
+  font-size:10.5px;font-weight:700;color:var(--azul);
+  background:#EEF4F8;border:1px solid #D3E4EE;border-radius:8px;padding:5px 8px;white-space:nowrap;
+}
+.packbtns button:active{background:#DCEAF2}
+.packbtns button:disabled{opacity:.35}
+.packinfo{font-size:11px;color:var(--azul);font-weight:700;margin-top:4px;font-family:'IBM Plex Mono',monospace}
+.cpack{display:flex;gap:6px;flex:none}
+.cpack label{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--muted);margin-bottom:3px;text-align:center}
+.cinput.chico{width:62px;height:44px;font-size:16px}
+.packnote{
+  font-size:11px;color:var(--azul);background:#F5FAFC;border-radius:9px;
+  padding:8px 10px;margin-top:10px;line-height:1.5;
+}
+.chk{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
+.chk input{width:17px;height:17px;accent-color:var(--fresa)}
+#altabox{display:none}
+#altabox.on{display:block}
+
 /* Barra de exportar */
 .expbar{display:flex;gap:8px;margin:10px 0 0;flex-wrap:wrap}
 .expbar .btn{flex:1;white-space:nowrap}
@@ -448,6 +470,19 @@ function estado(loc,id){
   return 'ok';
 }
 const etiqueta = e => e==='out'?'Agotado' : e==='low'?'Bajo' : e==='na'?'—' : 'OK';
+
+/* ===== Empaque: se compra por paquete, se cuenta y se usa por unidad ===== */
+const tienePack = i => Number(i.factor) > 1 && i.empaque;
+const aPacks = (i, u) => Math.floor(u / Number(i.factor));       // 27 botellas -> 2 paquetes
+const sueltas = (i, u) => u % Number(i.factor);                  //            -> 3 sueltas
+const desdePack = (i, p, s) => Math.max(0, (Number(p)||0) * Number(i.factor) + (Number(s)||0));
+/* Cómo se lee una cantidad: "27 botellas (2 paquetes + 3)" */
+function leerCant(i, u){
+  if (!tienePack(i)) return `${u} ${i.unidad}`;
+  const p = aPacks(i,u), s = sueltas(i,u);
+  if (!p) return `${u} ${i.unidad}`;
+  return `${u} ${i.unidad} (${p} ${i.empaque}${p>1?'s':''}${s ? ' + ' + s : ''})`;
+}
 function comprometido(id){
   return REQ.filter(r => r.tipo==='tienda' && ['enviado','aprobado'].includes(r.estado))
     .reduce((a,r) => { const l = r.lineas.find(x => x.insumo_id === id); return a + (l ? Number(l.aprob||0) : 0); }, 0);
@@ -579,6 +614,25 @@ async function setLineaTienda(lid,val){
   await db.from('lfi_pedido_lineas').update({cant:v, aprob:v}).eq('id',lid);
   await cargar(true); render();
 }
+/* En la compra se captura por EMPAQUE; por dentro todo vive en unidades sueltas */
+async function setLineaPack(lid, packs){
+  const l = REQ.flatMap(r => r.lineas).find(x => x.id === lid);
+  const i = item(l.insumo_id);
+  const u = Math.max(0, (Number(packs)||0) * Number(i.factor));
+  setDot('busy');
+  await db.from('lfi_pedido_lineas').update({aprob:u}).eq('id',lid);
+  await cargar(true); render();
+}
+/* Precio que te da el proveedor por paquete -> se guarda por unidad */
+async function setPrecioPack(lid, precioPack){
+  const l = REQ.flatMap(r => r.lineas).find(x => x.id === lid);
+  const i = item(l.insumo_id);
+  const p = Number(precioPack);
+  setDot('busy');
+  await db.from('lfi_pedido_lineas')
+    .update({precio: p > 0 ? p / Number(i.factor) : null}).eq('id',lid);
+  await cargar(true); render();
+}
 async function setPrecio(lid,val){
   setDot('busy');
   const p = Number(val);
@@ -685,10 +739,15 @@ function csvPedido(r){
   });
   return filas;
 }
+function pedirEn(i, unidades){
+  if (!tienePack(i)) return `${unidades} ${i.unidad}`;
+  const p = Math.ceil(unidades / Number(i.factor));
+  return `${p} ${i.empaque}${p!==1?'s':''} (de ${i.factor})`;
+}
 function textoProveedor(prov){
   const items = necesidades().filter(n => (n.i.proveedor || 'Sin proveedor asignado') === prov);
   const L = [`🍓 *Lady Fresa* — pedido del ${hoy()}`, '', `*${prov}*`, ''];
-  items.forEach(n => L.push(`• ${n.i.nombre}: *${n.comprar}* ${n.i.unidad}`));
+  items.forEach(n => L.push(`• ${n.i.nombre}: *${pedirEn(n.i, n.comprar)}*`));
   L.push('', 'Gracias!');
   return L.join('\n');
 }
@@ -766,13 +825,18 @@ async function recibir(rid){
   await cargar(true); render();
 }
 async function editarInsumo(id,campo,val){
-  const num = !['nombre','categoria','unidad','proveedor'].includes(campo);
-  const patch = {}; patch[campo] = num ? (Number(val)||0) : val;
-  const it = item(id); if (it) it[campo] = patch[campo];
+  let v;
+  if (campo === 'diario') v = !!val;
+  else if (['nombre','categoria','unidad','proveedor','empaque'].includes(campo)) v = (val === '' ? null : val);
+  else if (campo === 'factor') v = Math.max(1, Number(val)||1);
+  else v = Number(val)||0;
+  const patch = {}; patch[campo] = v;
+  const it = item(id); if (it) it[campo] = v;
   setDot('busy');
   const { error } = await db.from('lfi_insumos').update(patch).eq('id',id);
   setDot(error ? 'err' : '');
   if (error) toast('No se guardó el cambio.');
+  else if (['factor','empaque','diario'].includes(campo)) render();
 }
 async function editarNivel(loc,id,campo,val){
   const n = nivel(loc,id);
@@ -825,10 +889,24 @@ function toggleConteo(){
 function capturar(id, val){
   const v = val === '' ? undefined : Math.max(0, Number(val)||0);
   if (v === undefined) delete conteo[id]; else conteo[id] = v;
+  refrescarProgreso();
+}
+function capturarPack(id){
+  const i = item(id);
+  const p = document.getElementById('p-'+id).value;
+  const s = document.getElementById('s-'+id).value;
+  if (p === '' && s === '') delete conteo[id];
+  else conteo[id] = desdePack(i, p, s);
+  refrescarProgreso();
+}
+function refrescarProgreso(){
   const h = document.getElementById('cnt-hechos');
   if (h) h.textContent = Object.keys(conteo).length;
   const b = document.getElementById('cnt-guardar');
-  if (b) b.disabled = !Object.keys(conteo).length;
+  if (b){
+    b.disabled = !Object.keys(conteo).length;
+    b.textContent = `Guardar conteo (${Object.keys(conteo).length})`;
+  }
 }
 function siguienteCampo(idx){
   const el = document.querySelector(`[data-cidx="${idx+1}"]`);
@@ -852,7 +930,7 @@ async function guardarConteo(){
   await cargar(true); render();
 }
 function llenarCerosNoContados(){
-  const faltan = filtra(true).filter(i => conteo[i.id] === undefined);
+  const faltan = filtra().filter(i => conteo[i.id] === undefined);
   if (!faltan.length){ toast('Ya capturaste todo.'); return; }
   if (!confirm(`Vas a poner en CERO los ${faltan.length} insumos que no capturaste. Solo hazlo si de verdad no hay nada de ellos. ¿Le seguimos?`)) return;
   faltan.forEach(i => conteo[i.id] = 0);
@@ -862,11 +940,10 @@ function llenarCerosNoContados(){
 
 /* ===== Piezas de UI ===== */
 const cats = () => [...new Set(CAT.map(i => i.categoria))];
-function filtra(soloDeLaTienda){
+function filtra(){
   return CAT.filter(i => {
     if (filtroCat && i.categoria !== filtroCat) return false;
     if (q && !(i.nombre + ' ' + i.categoria + ' ' + (i.proveedor||'')).toLowerCase().includes(q.toLowerCase())) return false;
-    if (soloDeLaTienda && !verCentro() && nivel(who,i.id).par === 0 && !stock(who,i.id)) return false;
     return true;
   });
 }
@@ -889,7 +966,7 @@ function stepper(v, fnMenos, fnMas, fnSet, tiene){
 
 /* ===== Vistas ===== */
 function vInventario(){
-  const loc = who, lista = filtra(true);
+  const loc = who, lista = filtra();
 
   /* ---- Modo conteo ---- */
   if (modoConteo){
@@ -903,6 +980,7 @@ function vInventario(){
         const hecho = val !== undefined;
         const antes = stock(loc,i.id);
         const dif = hecho ? val - antes : 0;
+        const pack = tienePack(i);
         html += `<div class="cnt ${hecho?'hecho':''}">
           <div class="ctxt">
             <div class="nm">${esc(i.nombre)}</div>
@@ -910,14 +988,27 @@ function vInventario(){
               <span class="mono">antes: ${antes} ${esc(i.unidad)}</span>
               ${hecho && dif !== 0 ? `<span class="cdif ${dif>0?'up':'dn'}">${dif>0?'+':''}${dif}</span>` : ''}
               ${hecho && dif === 0 ? '<span class="cdif eq">sin cambio</span>' : ''}
+              ${pack && hecho && val > 0 ? `<span class="cdif eq">= ${val} ${esc(i.unidad)}</span>` : ''}
             </div>
           </div>
-          <input class="cinput" type="number" inputmode="decimal" data-cidx="${idx}"
-            value="${hecho ? val : ''}" placeholder="—"
-            onfocus="this.select()"
-            oninput="capturar('${i.id}', this.value)"
-            onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}">
-          <span class="cuni">${esc(i.unidad)}</span>
+          ${pack
+            ? `<div class="cpack">
+                 <div><label>${esc(i.empaque)}s de ${i.factor}</label>
+                   <input class="cinput chico" type="number" inputmode="numeric" data-cidx="${idx}"
+                     id="p-${i.id}" value="${hecho ? aPacks(i,val) : ''}" placeholder="0"
+                     onfocus="this.select()" oninput="capturarPack('${i.id}')"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('s-${i.id}').focus()}"></div>
+                 <div><label>sueltas</label>
+                   <input class="cinput chico" type="number" inputmode="numeric"
+                     id="s-${i.id}" value="${hecho ? sueltas(i,val) : ''}" placeholder="0"
+                     onfocus="this.select()" oninput="capturarPack('${i.id}')"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}"></div>
+               </div>`
+            : `<input class="cinput" type="number" inputmode="decimal" data-cidx="${idx}"
+                 value="${hecho ? val : ''}" placeholder="—"
+                 onfocus="this.select()" oninput="capturar('${i.id}', this.value)"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}">
+               <span class="cuni">${esc(i.unidad)}</span>`}
         </div>`;
         idx++;
       }
@@ -951,6 +1042,7 @@ function vInventario(){
     html += `<div class="seccion">${esc(c)}</div>`;
     for (const i of items){
       const s = stock(loc,i.id), e = estado(loc,i.id), {min,par} = nivel(loc,i.id);
+      const f = Number(i.factor);
       html += `<div class="ic ${e}">
         <div class="txt">
           <div class="nm">${esc(i.nombre)}</div>
@@ -958,9 +1050,16 @@ function vInventario(){
             <span class="pill ${e}">${etiqueta(e)}</span>
             <span class="mono">mín ${min} · par ${par} ${esc(i.unidad)}</span>
           </div>
+          ${tienePack(i) && s > 0 ? `<div class="packinfo">= ${aPacks(i,s)} ${esc(i.empaque)}${aPacks(i,s)!==1?'s':''}${sueltas(i,s) ? ' + ' + sueltas(i,s) + ' suelta' + (sueltas(i,s)!==1?'s':'') : ''}</div>` : ''}
         </div>
-        ${stepper(s, `ajustar('${loc}','${i.id}',${s-1})`, `ajustar('${loc}','${i.id}',${s+1})`,
-                  `ajustar('${loc}','${i.id}',this.value)`, s>0)}
+        <div class="stepwrap">
+          ${stepper(s, `ajustar('${loc}','${i.id}',${s-1})`, `ajustar('${loc}','${i.id}',${s+1})`,
+                    `ajustar('${loc}','${i.id}',this.value)`, s>0)}
+          ${tienePack(i) ? `<div class="packbtns">
+            <button onclick="ajustar('${loc}','${i.id}',${Math.max(0,s-f)})" ${s<f?'disabled':''}>−1 ${esc(i.empaque)}</button>
+            <button onclick="ajustar('${loc}','${i.id}',${s+f})">+1 ${esc(i.empaque)}</button>
+          </div>` : ''}
+        </div>
       </div>`;
     }
   }
@@ -1006,7 +1105,7 @@ function bloqueDiario(){
 function vRequerimiento(){
   const dir = verCentro();
   if (dir) return vComprar();
-  const lista = filtra(true);
+  const lista = filtra();
   let html = '';
   for (const c of cats()){
     const items = lista.filter(i => i.categoria === c);
@@ -1052,21 +1151,24 @@ function vComprar(){
         <b>${esc(p)}</b>
         <span class="mono">${items.length} ${items.length===1?'insumo':'insumos'}</span>
       </div>
-      ${items.map(n => `<div class="nfila ${n.i.diario?'dia':''}">
+      ${items.map(n => { const pack = tienePack(n.i), f = Number(n.i.factor);
+        const packs = pack ? Math.ceil(n.comprar / f) : n.comprar;
+        return `<div class="nfila ${n.i.diario?'dia':''}">
         <div class="ntxt">
           <div class="nm">${esc(n.i.nombre)}${n.i.diario ? ' <span class="pill dia">diario</span>' : ''}</div>
           <div class="nwhy">
             ${Object.keys(n.piden).length
               ? 'Piden: ' + Object.entries(n.piden).map(([t,c]) => `<b>${LOCS[t].short} ${c}</b>`).join(' · ')
               : '<span style="color:var(--muted)">Nadie ha pedido; es para reponer tu par</span>'}
-            <br><span class="mono">tienes ${n.hay} · par ${n.i.par_com}</span>
+            <br><span class="mono">tienes ${n.hay} · par ${n.i.par_com} ${esc(n.i.unidad)}</span>
+            ${pack ? `<br><span class="mono">faltan ${n.comprar} ${esc(n.i.unidad)} → ${packs} ${esc(n.i.empaque)}${packs!==1?'s':''}</span>` : ''}
           </div>
         </div>
         <div class="ncomprar">
-          <span class="ncant mono">${n.comprar}</span>
-          <span class="nuni">${esc(n.i.unidad)}</span>
+          <span class="ncant mono">${packs}</span>
+          <span class="nuni">${pack ? esc(n.i.empaque)+(packs!==1?'s':'') : esc(n.i.unidad)}</span>
         </div>
-      </div>`).join('')}
+      </div>`; }).join('')}
       <div class="expbar sm" style="padding:10px 12px;background:#FFFAF9;margin:0">
         <button class="btn sm ghost" onclick="copiar(textoProveedor('${esc(p).replace(/'/g,"\\'")}'))">📋 Copiar</button>
         <button class="btn sm" onclick="generarOrden('${esc(p).replace(/'/g,"\\'")}')">Generar orden</button>
@@ -1088,9 +1190,12 @@ async function crearOrden(prov, items){
   const { data:ped, error } = await db.from('lfi_pedidos')
     .insert({tipo:'compra', sucursal:'centro', fecha:hoy(), estado:'aprobado', proveedor:prov}).select().single();
   if (error) return false;
-  await db.from('lfi_pedido_lineas').insert(items.map(n => ({
-    pedido_id: ped.id, insumo_id: n.i.id, cant: n.comprar, aprob: n.comprar,
-  })));
+  await db.from('lfi_pedido_lineas').insert(items.map(n => {
+    // No se compran medias cajas: si trae empaque, se redondea al paquete completo de arriba
+    const f = Number(n.i.factor);
+    const c = tienePack(n.i) ? Math.ceil(n.comprar / f) * f : n.comprar;
+    return {pedido_id: ped.id, insumo_id: n.i.id, cant: c, aprob: c};
+  }));
   return true;
 }
 
@@ -1226,16 +1331,26 @@ function vCompras(){
 
     const bloques = Object.entries(porProv).map(([p,ls]) => `<div class="provhead">${esc(p)}</div>
       ${ls.map(l => { const i = item(l.insumo_id); const pu = precioLinea(l);
+        const pack = tienePack(i), f = Number(i.factor);
+        const cantPack = pack ? Math.round(Number(l.aprob) / f) : Number(l.aprob);
+        const precioPack = pack ? pu * f : pu;
         return `<div class="pl compra">
           <span class="n">${esc(i.nombre)}
-            <span class="sub2">${money(pu)} / ${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}</span></span>
+            <span class="sub2">${pack
+              ? `${money(precioPack)} / ${esc(i.empaque)} de ${f} · ${l.aprob} ${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}`
+              : `${money(pu)} / ${esc(i.unidad)} · subtotal ${money(Number(l.aprob||0)*pu)}`}</span></span>
           ${abierta
             ? `<div class="campos">
-                 <div><label>Cant</label><input type="number" inputmode="decimal" value="${l.aprob}" class="mono" onchange="setLinea(${l.id},this.value)"></div>
-                 <div><label>Precio ${esc(i.unidad)}</label><input type="number" inputmode="decimal" step="0.01" value="${l.precio ?? ''}" placeholder="${i.costo}" class="mono precio" onchange="setPrecio(${l.id},this.value)"></div>
+                 <div><label>${pack ? esc(i.empaque)+'s' : 'Cant'}</label>
+                   <input type="number" inputmode="decimal" value="${cantPack}" class="mono"
+                     onchange="${pack ? `setLineaPack(${l.id},this.value)` : `setLinea(${l.id},this.value)`}"></div>
+                 <div><label>Precio ${pack ? esc(i.empaque) : esc(i.unidad)}</label>
+                   <input type="number" inputmode="decimal" step="0.01" value="${l.precio != null ? (pack ? +(l.precio*f).toFixed(2) : l.precio) : ''}"
+                     placeholder="${pack ? +(Number(i.costo)*f).toFixed(2) : i.costo}" class="mono precio"
+                     onchange="${pack ? `setPrecioPack(${l.id},this.value)` : `setPrecio(${l.id},this.value)`}"></div>
                  <button class="x" onclick="borrarLinea(${l.id})" aria-label="Quitar">×</button>
                </div>`
-            : `<span class="mono" style="font-weight:700">${l.surtido ?? l.aprob} ${esc(i.unidad)}</span>`}
+            : `<span class="mono" style="font-weight:700">${pack ? Math.round(Number(l.surtido ?? l.aprob)/f) + ' ' + esc(i.empaque) + 's' : (l.surtido ?? l.aprob) + ' ' + esc(i.unidad)}</span>`}
         </div>`; }).join('')}`).join('');
 
     let acc = '';
@@ -1311,9 +1426,39 @@ function vMovimientos(){
   <div class="card">${rows || '<div class="empty"><b>Sin movimientos</b>Aparecerán en cuanto ajustes inventario o te surtan.</div>'}</div>`;
 }
 
+async function nuevoInsumo(){
+  const v = id => document.getElementById(id).value.trim();
+  const nombre = v('ni-nombre');
+  if (!nombre){ toast('Ponle nombre al insumo'); return; }
+  const factor = Math.max(1, Number(v('ni-factor')) || 1);
+  const empaque = v('ni-empaque');
+  const parT = Number(v('ni-par')) || 0;
+  setDot('busy');
+  const { data:ins, error } = await db.from('lfi_insumos').insert({
+    nombre,
+    categoria: v('ni-cat') || 'General',
+    unidad:    v('ni-uni') || 'pza',
+    empaque:   factor > 1 ? (empaque || 'paquete') : null,
+    factor,
+    costo:     Number(v('ni-costo')) || 0,
+    proveedor: v('ni-prov') || null,
+    diario:    document.getElementById('ni-diario').checked,
+    par_com:   parT * 3,
+    min_com:   Math.floor(parT * 3 * 0.4),
+  }).select().single();
+  if (error){ toast('No se pudo agregar el insumo.'); setDot('err'); return; }
+  // Se le da nivel en las tres tiendas de una vez
+  await db.from('lfi_niveles').insert(['moctezuma','narvarte','balbuena'].map(s => ({
+    sucursal:s, insumo_id:ins.id, par_nivel:parT, min_nivel:Math.floor(parT*0.4),
+  })));
+  toast(nombre + ' agregado y disponible en las 3 tiendas');
+  await cargar(true); render();
+}
+
 function vCatalogo(){
-  const rows = filtra(false).map(i => {
+  const rows = filtra().map(i => {
     const n = nivel(who,i.id);
+    const f = Number(i.factor);
     const nivelCampos = verCentro()
       ? `<div><label>Mín comisariato</label><input class="niv" type="number" inputmode="numeric" value="${i.min_com}" onchange="editarInsumo('${i.id}','min_com',this.value)"></div>
          <div><label>Par comisariato</label><input class="niv" type="number" inputmode="numeric" value="${i.par_com}" onchange="editarInsumo('${i.id}','par_com',this.value)"></div>`
@@ -1322,18 +1467,45 @@ function vCatalogo(){
     return `<div class="card ce">
       <div class="row" style="gap:8px">
         <input type="text" value="${esc(i.nombre)}" style="flex:1;min-width:140px;font-weight:700" onchange="editarInsumo('${i.id}','nombre',this.value)">
+        <label class="chk" title="Se pide todos los días">
+          <input type="checkbox" ${i.diario?'checked':''} onchange="editarInsumo('${i.id}','diario',this.checked)"> diario
+        </label>
         <button style="color:#CFB6BC;font-size:22px;padding:4px 8px" onclick="borrarInsumo('${i.id}')" aria-label="Dar de baja">×</button>
       </div>
       <div class="cgrid">
-        <div><label>Unidad</label><input type="text" value="${esc(i.unidad)}" onchange="editarInsumo('${i.id}','unidad',this.value)"></div>
-        <div><label>Costo unitario</label><input type="number" inputmode="decimal" value="${i.costo}" onchange="editarInsumo('${i.id}','costo',this.value)"></div>
+        <div><label>Unidad de uso</label><input type="text" value="${esc(i.unidad)}" onchange="editarInsumo('${i.id}','unidad',this.value)"></div>
+        <div><label>Costo por ${esc(i.unidad)}</label><input type="number" inputmode="decimal" value="${i.costo}" onchange="editarInsumo('${i.id}','costo',this.value)"></div>
+        <div><label>Se compra por</label><input type="text" value="${esc(i.empaque)}" placeholder="suelto" onchange="editarInsumo('${i.id}','empaque',this.value)"></div>
+        <div><label>${esc(i.unidad)} por ${esc(i.empaque || 'empaque')}</label><input type="number" inputmode="numeric" value="${f}" onchange="editarInsumo('${i.id}','factor',this.value)"></div>
         <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" value="${esc(i.proveedor)}" placeholder="¿Quién lo surte?" onchange="editarInsumo('${i.id}','proveedor',this.value)"></div>
         ${nivelCampos}
       </div>
+      ${f > 1 ? `<div class="packnote">Se compra por <b>${esc(i.empaque)}</b> de ${f} ${esc(i.unidad)}, pero se cuenta y se pide por <b>${esc(i.unidad)}</b> suelta.</div>` : ''}
     </div>`;
   }).join('');
+
   return `<h2 class="page">Catálogo</h2>
   <p class="sub">Los niveles que ves son los de <b>${LOCS[who].short}</b>${isDir()?' — cámbiate de sucursal arriba para editar otra':''}. Par en <b>0</b> = esa tienda no maneja el insumo.</p>
+  <button class="btn wide" onclick="document.getElementById('altabox').classList.toggle('on')" style="margin-bottom:12px">+ Agregar insumo nuevo</button>
+  <div class="card ce" id="altabox">
+    <span class="eyebrow">Insumo nuevo</span>
+    <div class="cgrid" style="margin-top:10px">
+      <div style="grid-column:1 / -1"><label>Nombre</label><input type="text" id="ni-nombre" placeholder="Ej: Nutella"></div>
+      <div><label>Categoría</label><input type="text" id="ni-cat" list="cats-list" value="Comestibles"></div>
+      <div><label>Unidad de uso</label><input type="text" id="ni-uni" value="pza" placeholder="kg, pza, L…"></div>
+      <div><label>Se compra por</label><input type="text" id="ni-empaque" placeholder="suelto / caja / paquete"></div>
+      <div><label>Unidades por empaque</label><input type="number" inputmode="numeric" id="ni-factor" value="1"></div>
+      <div><label>Costo por unidad</label><input type="number" inputmode="decimal" id="ni-costo" placeholder="0"></div>
+      <div><label>Par por tienda</label><input type="number" inputmode="numeric" id="ni-par" value="1"></div>
+      <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" id="ni-prov" placeholder="¿Quién lo surte?"></div>
+      <div style="grid-column:1 / -1">
+        <label class="chk"><input type="checkbox" id="ni-diario"> Se pide todos los días (sale hasta arriba en Pedir)</label>
+      </div>
+    </div>
+    <datalist id="cats-list">${cats().map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+    <button class="btn wide" onclick="nuevoInsumo()" style="margin-top:12px">Agregar a las 3 tiendas</button>
+    <div class="packnote">Se da de alta en las tres tiendas con el mismo par. Después lo ajustas tienda por tienda.</div>
+  </div>
   ${barra()}
   ${rows || '<div class="card empty"><b>Sin resultados</b></div>'}`;
 }
