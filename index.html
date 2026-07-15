@@ -269,6 +269,7 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 .packbtns button:active{background:#DCEAF2}
 .packbtns button:disabled{opacity:.35}
 .packinfo{font-size:11px;color:var(--azul);font-weight:700;margin-top:4px;font-family:'IBM Plex Mono',monospace}
+.fracinfo{font-size:10.5px;color:var(--muted);margin-top:4px;font-style:italic}
 .cpack{display:flex;gap:6px;flex:none}
 .cpack label{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:800;color:var(--muted);margin-bottom:3px;text-align:center}
 .cinput.chico{width:62px;height:44px;font-size:16px}
@@ -316,6 +317,13 @@ input:focus,select:focus{outline:2px solid var(--fresa);outline-offset:-1px;bord
 .diario .btn{background:#fff;color:var(--fresa-dark)}
 .diario .btn:active{background:#FFE9ED}
 .dnota{font-size:11.5px;color:rgba(255,255,255,.8);margin-top:9px;line-height:1.45}
+.dfila.multi{flex-direction:column;align-items:stretch;gap:10px}
+.dcajas{display:flex;gap:10px}
+.dcaja{flex:1;background:rgba(255,255,255,.1);border-radius:10px;padding:8px 8px 10px;text-align:center}
+.dcaja label{display:block;font-size:11px;font-weight:800;color:#fff;margin-bottom:6px}
+.dcaja .st2{justify-content:center}
+.dcaja .st2 button{background:rgba(255,255,255,.92);border-color:transparent;color:var(--fresa);width:38px;height:40px}
+.dcaja .st2 input{background:#fff;border-color:transparent;color:var(--ink);width:46px;height:40px}
 .pill.dia{background:#FFE3E9;color:var(--fresa-dark)}
 .pill.granel{background:#EDE7F6;color:#5B3FA8}
 .cajas{display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;flex:none}
@@ -464,6 +472,15 @@ let modoConteo=false, conteo={};   // conteo = capturas pendientes de guardar
 
 const hoy = () => new Date().toISOString().slice(0,10);
 const money = n => '$' + (Math.round(n*100)/100).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+/* Muestra la cantidad: los fraccionables (kg, L) con decimales; el resto entero */
+const esFrac = i => !!(i && i.fraccion);
+function fmtCant(i, n){
+  const v = Number(n) || 0;
+  if (!esFrac(i)) return String(Math.round(v));
+  return (Math.round(v*1000)/1000).toLocaleString('es-MX',{maximumFractionDigits:3});
+}
+/* Redondea una cantidad al guardar: fraccionables a milésimas, resto a entero */
+const limpiaCant = (i, n) => esFrac(i) ? Math.max(0, Math.round((Number(n)||0)*1000)/1000) : Math.max(0, Math.round(Number(n)||0));
 const item = id => CAT.find(i => i.id === id);
 const stock = (loc,id) => (INV[loc] && INV[loc][id]) || 0;
 const isDir = () => sesion && sesion.rol === 'direccion';
@@ -575,7 +592,8 @@ async function sincronizar(){ await cargar(); render(); toast('Actualizado'); }
 
 /* ===== Acciones ===== */
 async function ajustar(loc,id,val){
-  const nueva = Math.max(0, Number(val)||0);
+  const it = item(id);
+  const nueva = limpiaCant(it, val);
   if (nueva === stock(loc,id)) return;
   INV[loc][id] = nueva; render();
   setDot('busy');
@@ -584,29 +602,63 @@ async function ajustar(loc,id,val){
   await cargar(true); render();
 }
 function addDraft(id,c){
-  const v = Math.max(0, Number(c)||0);
+  const v = limpiaCant(item(id), c);
   if (v === 0) delete draft[id]; else draft[id] = v;
   render();
 }
+/* ===== Items multi (fresa): se piden por caja, eligiendo cuántas de cada tamaño ===== */
+const esMulti = i => i && i.multi && (PRES[i.id] || []).length > 0;
+const cajasDe = id => PRES[id] || [];
+/* draft[id] para multi = {presId: numCajas}. Total de cajas: */
+function totalCajas(id){
+  const d = draft[id];
+  if (!d || typeof d !== 'object') return 0;
+  return Object.values(d).reduce((a,b) => a + (Number(b)||0), 0);
+}
+function totalKg(id){
+  const d = draft[id];
+  if (!d || typeof d !== 'object') return 0;
+  return cajasDe(id).reduce((a,p) => a + (Number(d[p.id])||0) * Number(p.contiene), 0);
+}
+function setCajaDraft(id, presId, n){
+  const v = Math.max(0, Number(n)||0);
+  if (!draft[id] || typeof draft[id] !== 'object') draft[id] = {};
+  if (v === 0) delete draft[id][presId]; else draft[id][presId] = v;
+  if (!Object.keys(draft[id]).length) delete draft[id];
+  render();
+}
+/* Texto legible del desglose: "2 de 4kg + 1 de 6kg" */
+function textoDesglose(id, obj){
+  if (!obj) return '';
+  return cajasDe(id).filter(p => obj[p.id] > 0)
+    .map(p => `${obj[p.id]} de ${p.nombre.replace('Caja ','').replace(' kg','kg')}`).join(' + ');
+}
 function autollenar(){
-  draft = {};
-  CAT.forEach(i => { const s = sugerir(who,i); if (s > 0) draft[i.id] = s; });
-  const n = Object.keys(draft).length;
+  // No borra lo que ya elegiste de cajas (fresa); solo rellena los normales
+  Object.keys(draft).forEach(id => { if (!esMulti(item(id))) delete draft[id]; });
+  CAT.forEach(i => { if (esMulti(i)) return; const s = sugerir(who,i); if (s > 0) draft[i.id] = s; });
+  const n = Object.keys(draft).filter(id => !esMulti(item(id))).length;
   toast(n ? `Se llenaron ${n} insumos con lo que te falta` : 'Todo está en nivel. No hace falta pedir nada.');
   render();
   if (n) abrirSheet();
 }
 async function enviarPedido(){
-  const lineas = Object.entries(draft).filter(([,c]) => c > 0);
-  if (!lineas.length) return;
+  const ids = Object.keys(draft).filter(id => esMulti(item(id)) ? totalCajas(id) > 0 : draft[id] > 0);
+  if (!ids.length) return;
   const tipo = verCentro() ? 'compra' : 'tienda';
   cerrarSheet(); setDot('busy');
   const { data:ped, error } = await db.from('lfi_pedidos')
     .insert({tipo, sucursal:who, fecha:hoy(), estado: tipo==='compra' ? 'aprobado' : 'enviado'})
     .select().single();
   if (error){ toast('No se pudo enviar el pedido.'); setDot('err'); return; }
-  const { error:e2 } = await db.from('lfi_pedido_lineas')
-    .insert(lineas.map(([id,c]) => ({pedido_id:ped.id, insumo_id:id, cant:c, aprob:c})));
+  const filas = ids.map(id => {
+    if (esMulti(item(id))){
+      const c = totalCajas(id);
+      return {pedido_id:ped.id, insumo_id:id, cant:c, aprob:c, desglose:draft[id], nota:textoDesglose(id, draft[id])};
+    }
+    return {pedido_id:ped.id, insumo_id:id, cant:draft[id], aprob:draft[id]};
+  });
+  const { error:e2 } = await db.from('lfi_pedido_lineas').insert(filas);
   if (e2) toast('El pedido se creó pero fallaron las líneas.');
   draft = {};
   toast(tipo === 'compra' ? 'Orden de compra generada' : '✅ Pedido enviado al comisariato');
@@ -855,15 +907,22 @@ function csvInventario(loc){
 /* ===== Pedido diario (la fresa se pide todos los días) ===== */
 async function enviarDiario(){
   const diarios = CAT.filter(i => i.diario);
-  const lineas = diarios.filter(i => (draft[i.id] || 0) > 0).map(i => [i.id, draft[i.id]]);
-  if (!lineas.length){ toast('Pon cuánta fresa necesitas hoy.'); return; }
+  const filas = [];
+  diarios.forEach(i => {
+    if (esMulti(i)){
+      const c = totalCajas(i.id);
+      if (c > 0) filas.push({insumo_id:i.id, cant:c, aprob:c, desglose:draft[i.id], nota:textoDesglose(i.id, draft[i.id])});
+    } else if ((draft[i.id]||0) > 0){
+      filas.push({insumo_id:i.id, cant:draft[i.id], aprob:draft[i.id]});
+    }
+  });
+  if (!filas.length){ toast('Pon cuánta fresa necesitas hoy.'); return; }
   setDot('busy');
   const { data:ped, error } = await db.from('lfi_pedidos')
     .insert({tipo:'tienda', sucursal:who, fecha:hoy(), estado:'enviado'}).select().single();
   if (error){ toast('No se pudo enviar.'); setDot('err'); return; }
-  await db.from('lfi_pedido_lineas')
-    .insert(lineas.map(([id,c]) => ({pedido_id:ped.id, insumo_id:id, cant:c, aprob:c})));
-  lineas.forEach(([id]) => delete draft[id]);
+  await db.from('lfi_pedido_lineas').insert(filas.map(f => ({...f, pedido_id:ped.id})));
+  filas.forEach(f => delete draft[f.insumo_id]);
   toast('✅ Pedido del día enviado');
   await cargar(true); render();
 }
@@ -925,19 +984,31 @@ function abrirSheet(){ pintarSheet(); document.getElementById('sheet').classList
 function cerrarSheet(){ document.getElementById('sheet').classList.remove('on'); }
 function pintarSheet(){
   const dir = verCentro();
-  const lineas = Object.entries(draft).filter(([,c]) => c > 0);
-  const total = lineas.reduce((a,[id,c]) => a + c * Number(item(id).costo), 0);
+  // Lista de ids con cantidad > 0 (multi cuenta por total de cajas)
+  const ids = Object.keys(draft).filter(id => esMulti(item(id)) ? totalCajas(id) > 0 : draft[id] > 0);
+  const total = ids.reduce((a,id) => {
+    const i = item(id);
+    if (esMulti(i)) return a + totalKg(id) * Number(i.costo);  // costo por kg
+    return a + draft[id] * Number(i.costo);
+  }, 0);
   document.getElementById('sh-title').textContent = dir ? 'Orden de compra' : 'Comanda de pedido';
   document.getElementById('sh-meta').textContent = (dir ? 'Comisariato → proveedores' : LOCS[who].short + ' → comisariato') + ' · ' + hoy();
   document.getElementById('sh-send').textContent = dir ? 'Generar orden' : 'Enviar pedido';
-  // Las tiendas no ven precios: solo cuántos insumos van
   document.getElementById('sh-costlbl').textContent = isDir() ? 'Costo estimado' : 'Insumos en la comanda';
-  document.getElementById('sh-total').textContent = isDir() ? money(total) : String(lineas.length);
-  document.getElementById('sh-body').innerHTML = lineas.length ? lineas.map(([id,c]) => {
+  document.getElementById('sh-total').textContent = isDir() ? money(total) : String(ids.length);
+  document.getElementById('sh-body').innerHTML = ids.length ? ids.map(id => {
     const i = item(id);
+    if (esMulti(i)){
+      const tot = totalCajas(id);
+      return `<div class="cl">
+        <div class="i"><b>${esc(i.nombre)}</b><span>${textoDesglose(id, draft[id])} · ${totalKg(id)} kg</span></div>
+        <span class="mono" style="font-weight:700">${tot} <span style="color:var(--muted);font-size:12px">${tot===1?'caja':'cajas'}</span></span>
+        <button class="x" onclick="delete draft['${id}'];pintarSheet();render()" aria-label="Quitar">×</button>
+      </div>`;
+    }
     return `<div class="cl">
       <div class="i"><b>${esc(i.nombre)}</b><span>${dir ? esc(i.proveedor||'Sin proveedor') : 'Del comisariato'}</span></div>
-      <span class="mono" style="font-weight:700">${c} <span style="color:var(--muted);font-size:12px">${esc(i.unidad)}</span></span>
+      <span class="mono" style="font-weight:700">${draft[id]} <span style="color:var(--muted);font-size:12px">${esc(i.unidad)}</span></span>
       <button class="x" onclick="addDraft('${id}',0);pintarSheet()" aria-label="Quitar">×</button>
     </div>`;
   }).join('') : '<div class="empty"><b>Comanda vacía</b>Marca cantidades en la lista.</div>';
@@ -959,7 +1030,7 @@ function toggleConteo(){
   window.scrollTo(0,0); render();
 }
 function capturar(id, val){
-  const v = val === '' ? undefined : Math.max(0, Number(val)||0);
+  const v = val === '' ? undefined : limpiaCant(item(id), val);
   if (v === undefined) delete conteo[id]; else conteo[id] = v;
   respaldarConteo();
   refrescarProgreso();
@@ -1049,10 +1120,10 @@ const barra = () => `<div class="sticky">
   </div>
 </div>`;
 
-function stepper(v, fnMenos, fnMas, fnSet, tiene){
+function stepper(v, fnMenos, fnMas, fnSet, tiene, frac){
   return `<div class="st2 ${tiene?'tiene':''}">
     <button onclick="${fnMenos}" aria-label="Restar">−</button>
-    <input type="number" inputmode="numeric" value="${v}" onchange="${fnSet}">
+    <input type="number" inputmode="${frac?'decimal':'numeric'}" ${frac?'step="0.1"':''} value="${v}" onchange="${fnSet}">
     <button onclick="${fnMas}" aria-label="Sumar">+</button>
   </div>`;
 }
@@ -1078,8 +1149,8 @@ function vInventario(){
           <div class="ctxt">
             <div class="nm">${esc(i.nombre)}</div>
             <div class="cmeta">
-              <span class="mono">antes: ${antes} ${esc(i.unidad)}</span>
-              ${hecho && dif !== 0 ? `<span class="cdif ${dif>0?'up':'dn'}">${dif>0?'+':''}${dif}</span>` : ''}
+              <span class="mono">antes: ${fmtCant(i,antes)} ${esc(i.unidad)}</span>
+              ${hecho && dif !== 0 ? `<span class="cdif ${dif>0?'up':'dn'}">${dif>0?'+':''}${fmtCant(i,dif)}</span>` : ''}
               ${hecho && dif === 0 ? '<span class="cdif eq">sin cambio</span>' : ''}
               ${pack && hecho && val > 0 ? `<span class="cdif eq">= ${val} ${esc(i.unidad)}</span>` : ''}
             </div>
@@ -1098,9 +1169,9 @@ function vInventario(){
                      onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}"></div>
                </div>`
             : `<div class="ccampos">
-                 <div class="campo solo"><label>${esc(i.unidad)}</label>
-                   <input class="cinput" type="number" inputmode="decimal" data-cidx="${idx}"
-                     value="${hecho ? val : ''}" placeholder="—"
+                 <div class="campo solo"><label>${esc(i.unidad)}${esFrac(i)?' (decimales ok)':''}</label>
+                   <input class="cinput" type="number" inputmode="decimal" ${esFrac(i)?'step="0.001"':''} data-cidx="${idx}"
+                     value="${hecho ? fmtCant(i,val) : ''}" placeholder="—"
                      onfocus="this.select()" oninput="capturar('${i.id}', this.value)"
                      onkeydown="if(event.key==='Enter'){event.preventDefault();siguienteCampo(${idx})}"></div>
                </div>`}
@@ -1137,7 +1208,10 @@ function vInventario(){
     html += `<div class="seccion">${esc(c)}</div>`;
     for (const i of items){
       const s = stock(loc,i.id), e = estado(loc,i.id), {min,par} = nivel(loc,i.id);
-      const f = Number(i.factor);
+      const f = Number(i.factor), fr = esFrac(i);
+      const paso = fr ? 0.1 : 1;
+      const menos = Math.max(0, Math.round((s - paso)*1000)/1000);
+      const mas = Math.round((s + paso)*1000)/1000;
       html += `<div class="ic ${e}">
         <div class="txt">
           <div class="nm">${esc(i.nombre)}</div>
@@ -1146,10 +1220,11 @@ function vInventario(){
             <span class="mono">mín ${min} · par ${par} ${esc(i.unidad)}</span>
           </div>
           ${tienePack(i) && s > 0 ? `<div class="packinfo">= ${aPacks(i,s)} ${esc(i.empaque)}${aPacks(i,s)!==1?'s':''}${sueltas(i,s) ? ' + ' + sueltas(i,s) + ' suelta' + (sueltas(i,s)!==1?'s':'') : ''}</div>` : ''}
+          ${fr ? `<div class="fracinfo">se mide en ${esc(i.unidad)} · puedes poner decimales (ej. 1.3)</div>` : ''}
         </div>
         <div class="stepwrap">
-          ${stepper(s, `ajustar('${loc}','${i.id}',${s-1})`, `ajustar('${loc}','${i.id}',${s+1})`,
-                    `ajustar('${loc}','${i.id}',this.value)`, s>0)}
+          ${stepper(fmtCant(i,s), `ajustar('${loc}','${i.id}',${menos})`, `ajustar('${loc}','${i.id}',${mas})`,
+                    `ajustar('${loc}','${i.id}',this.value)`, s>0, fr)}
           ${tienePack(i) ? `<div class="packbtns">
             <button onclick="ajustar('${loc}','${i.id}',${Math.max(0,s-f)})" ${s<f?'disabled':''}>−1 ${esc(i.empaque)}</button>
             <button onclick="ajustar('${loc}','${i.id}',${s+f})">+1 ${esc(i.empaque)}</button>
@@ -1179,8 +1254,34 @@ function bloqueDiario(){
   const diarios = CAT.filter(i => i.diario);
   if (!diarios.length || verCentro()) return '';
   const filas = diarios.map(i => {
-    const s = stock(who,i.id), sug = sugerir(who,i), c = draft[i.id] ?? sug;
-    if (draft[i.id] === undefined && sug > 0) draft[i.id] = sug;   // precargado con lo sugerido
+    const s = stock(who,i.id);
+    if (esMulti(i)){
+      // Fresa: elegir cuántas cajas de cada tamaño
+      const cajas = cajasDe(i.id);
+      const tot = totalCajas(i.id);
+      const kg = totalKg(i.id);
+      return `<div class="dfila multi">
+        <div class="dtxt">
+          <b>${esc(i.nombre)}</b>
+          <span>Tienes ${s} ${s===1?'caja':'cajas'}${tot>0 ? ` · pides ${tot} (${kg} kg)` : ''}</span>
+        </div>
+        <div class="dcajas">
+          ${cajas.map(p => {
+            const n = (draft[i.id] && typeof draft[i.id]==='object') ? (draft[i.id][p.id]||0) : 0;
+            return `<div class="dcaja">
+              <label>${esc(p.nombre)}</label>
+              <div class="st2 ${n>0?'tiene':''}">
+                <button onclick="setCajaDraft('${i.id}','${p.id}',${n-1})" aria-label="Restar">−</button>
+                <input type="number" inputmode="numeric" value="${n}" onchange="setCajaDraft('${i.id}','${p.id}',this.value)">
+                <button onclick="setCajaDraft('${i.id}','${p.id}',${n+1})" aria-label="Sumar">+</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+    const sug = sugerir(who,i), c = draft[i.id] ?? sug;
+    if (draft[i.id] === undefined && sug > 0) draft[i.id] = sug;
     return `<div class="dfila">
       <div class="dtxt">
         <b>${esc(i.nombre)}</b>
@@ -1203,12 +1304,15 @@ function vRequerimiento(){
   const lista = filtra();
   let html = '';
   for (const c of cats()){
-    const items = lista.filter(i => i.categoria === c);
+    const items = lista.filter(i => i.categoria === c && !(i.diario && !verCentro()));
     if (!items.length) continue;
     html += `<div class="seccion">${esc(c)}</div>`;
     for (const i of items){
       const s = stock(who,i.id), e = estado(who,i.id), sug = sugerir(who,i), cc = draft[i.id] || 0;
       const {min} = nivel(who,i.id);
+      const fr = esFrac(i), paso = fr ? 0.1 : 1;
+      const menos = Math.max(0, Math.round((cc - paso)*1000)/1000);
+      const mas = Math.round((cc + paso)*1000)/1000;
       const exceso = sug > 0 && cc > sug + min;
       const corto = cc > 0 && cc > dispReal(i.id);
       html += `<div class="ic ${e}">
@@ -1216,13 +1320,13 @@ function vRequerimiento(){
           <div class="nm">${esc(i.nombre)}${i.diario ? ' <span class="pill dia">diario</span>' : ''}</div>
           <div class="meta">
             <span class="pill ${e}">${etiqueta(e)}</span>
-            <span class="mono">tienes ${s} ${esc(i.unidad)}</span>
-            ${sug > 0 ? `<span class="pill sug">sugerido ${sug}</span>` : ''}
+            <span class="mono">tienes ${fmtCant(i,s)} ${esc(i.unidad)}</span>
+            ${sug > 0 ? `<span class="pill sug">sugerido ${fmtCant(i,sug)}</span>` : ''}
           </div>
           ${exceso ? '<div class="flag amb">⚠ Más de lo que suele consumir</div>' : ''}
-          ${corto ? `<div class="flag red">⚠ El comisariato solo tiene ${Math.max(0,dispReal(i.id))}</div>` : ''}
+          ${corto ? `<div class="flag red">⚠ El comisariato solo tiene ${fmtCant(i,Math.max(0,dispReal(i.id)))}</div>` : ''}
         </div>
-        ${stepper(cc, `addDraft('${i.id}',${cc-1})`, `addDraft('${i.id}',${cc+1})`, `addDraft('${i.id}',this.value)`, cc>0)}
+        ${stepper(fmtCant(i,cc), `addDraft('${i.id}',${menos})`, `addDraft('${i.id}',${mas})`, `addDraft('${i.id}',this.value)`, cc>0, fr)}
       </div>`;
     }
   }
@@ -1324,11 +1428,12 @@ async function generarTodas(){
 }
 
 function cbar(){
-  const lineas = Object.entries(draft).filter(([,c]) => c > 0);
-  if (tab !== 'req' || !lineas.length || verCentro()) return '';
-  const total = lineas.reduce((a,[id,c]) => a + c * Number(item(id).costo), 0);
+  const ids = Object.keys(draft).filter(id => esMulti(item(id)) ? totalCajas(id) > 0 : draft[id] > 0);
+  if (tab !== 'req' || !ids.length || verCentro()) return '';
+  const total = ids.reduce((a,id) => { const i = item(id);
+    return a + (esMulti(i) ? totalKg(id) : draft[id]) * Number(i.costo); }, 0);
   return `<div class="cbar"><div class="inner">
-    <div class="info"><b>${lineas.length} ${lineas.length===1?'insumo':'insumos'}</b>
+    <div class="info"><b>${ids.length} ${ids.length===1?'insumo':'insumos'}</b>
       <span>${isDir() ? money(total) + ' estimado' : 'listos para enviar'}</span></div>
     <button class="btn ghost sm" onclick="abrirSheet()">Ver</button>
     <button class="btn" onclick="abrirSheet()">Enviar</button>
@@ -1353,6 +1458,15 @@ function vPedidos(){
       const disp = stock('centro', l.insumo_id);
       const corto = ['enviado','aprobado'].includes(r.estado) && Number(l.aprob) > disp;
       const parcial = l.surtido != null && Number(l.surtido) < Number(l.cant);
+      const multi = i.multi && l.desglose;
+      // Item multi (fresa): se muestra el desglose de cajas, no editable por campo simple
+      if (multi){
+        const kg = cajasDe(i.id).reduce((a,p) => a + (Number(l.desglose[p.id])||0)*Number(p.contiene), 0);
+        return `<div class="pl">
+          <span class="n">${esc(i.nombre)}<br><span class="mono" style="font-size:11.5px;color:var(--muted)">${esc(l.nota||'')} · ${kg} kg${corto ? ` · <span style="color:var(--fresa)">solo hay ${disp}</span>` : ''}</span></span>
+          <span class="mono" style="font-weight:700">${l.surtido ?? l.aprob} ${(l.surtido ?? l.aprob)===1?'caja':'cajas'}${parcial?' ⚠':''}</span>
+        </div>`;
+      }
       return `<div class="pl">
         <span class="n">${esc(i.nombre)}${corto ? `<br><span class="pill out">solo hay ${disp}</span>` : ''}</span>
         ${dirEdita ? `<span class="mono" style="color:var(--muted);font-size:11.5px">pidió ${l.cant}</span>` : ''}
