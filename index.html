@@ -416,6 +416,7 @@ input:focus,select:focus{outline:none;border-color:var(--fresa);box-shadow:0 0 0
 .cgrid label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;color:var(--muted);display:block;margin-bottom:4px}
 .cgrid input{width:100%;padding:9px}
 .cgrid .niv{background:#FFFAF9}
+.costoaprox{font-size:10.5px;color:var(--faint);margin-top:3px;font-family:'IBM Plex Mono',monospace}
 
 #toast{
   position:fixed;left:16px;right:16px;bottom:calc(132px + var(--safe-b));
@@ -1101,6 +1102,14 @@ async function editarInsumo(id,campo,val){
   setDot(error ? 'err' : '');
   if (error) toast('No se guardó el cambio.');
   else if (['factor','empaque','diario','granel'].includes(campo)) render();
+}
+/* El costo se captura como lo compras (por paquete/caja); se guarda por unidad de uso */
+async function editarCostoEmpaque(id, val){
+  const i = item(id);
+  const f = Math.max(1, Number(i.factor)||1);
+  const porUnidad = Math.round(((Number(val)||0) / f) * 10000) / 10000;
+  await editarInsumo(id, 'costo', porUnidad);
+  render();
 }
 async function editarNivel(loc,id,campo,val){
   const n = nivel(loc,id);
@@ -1994,6 +2003,8 @@ async function nuevoInsumo(){
   const empaque = v('ni-empaque');
   const granel = document.getElementById('ni-granel').checked;
   const parT = Number(v('ni-par')) || 0;
+  const costoCapturado = Number(v('ni-costo')) || 0;
+  const costoUnidad = (!granel && factor > 1) ? Math.round((costoCapturado / factor) * 10000) / 10000 : costoCapturado;
   setDot('busy');
   const { data:ins, error } = await db.from('lfi_insumos').insert({
     nombre,
@@ -2003,7 +2014,7 @@ async function nuevoInsumo(){
     factor:    granel ? 1 : factor,
     granel,
     empaque_ref: granel ? (empaque || null) : null,
-    costo:     Number(v('ni-costo')) || 0,
+    costo:     costoUnidad,
     proveedor: v('ni-prov') || null,
     diario:    document.getElementById('ni-diario').checked,
     par_com:   parT * 3,
@@ -2037,7 +2048,9 @@ function vCatalogo(){
       </div>
       <div class="cgrid">
         <div><label>Unidad de uso</label><input type="text" value="${esc(i.unidad)}" onchange="editarInsumo('${i.id}','unidad',this.value)"></div>
-        <div><label>Costo por ${esc(i.unidad)}</label><input type="number" inputmode="decimal" value="${i.costo}" onchange="editarInsumo('${i.id}','costo',this.value)"></div>
+        ${tienePack(i)
+          ? `<div><label>Costo por ${esc(i.empaque)} (${f} ${esc(i.unidad)})</label><input type="number" inputmode="decimal" value="${i.costo ? Math.round(i.costo*f*100)/100 : ''}" placeholder="0" onchange="editarCostoEmpaque('${i.id}',this.value)"><div class="costoaprox">≈ ${money(Number(i.costo)||0)} por ${esc(i.unidad)}</div></div>`
+          : `<div><label>Costo por ${esc(i.unidad)}</label><input type="number" inputmode="decimal" value="${i.costo}" onchange="editarInsumo('${i.id}','costo',this.value)"></div>`}
         ${i.granel
           ? `<div style="grid-column:1 / -1"><label>Referencia de compra (texto para el proveedor)</label><input type="text" value="${esc(i.empaque_ref)}" placeholder="ej: caja de 4 a 6 kg" onchange="editarInsumo('${i.id}','empaque_ref',this.value)"></div>`
           : `<div><label>Se compra por</label><input type="text" value="${esc(i.empaque)}" placeholder="suelto" onchange="editarInsumo('${i.id}','empaque',this.value)"></div>
@@ -2064,7 +2077,7 @@ function vCatalogo(){
       <div><label>Unidad de uso</label><input type="text" id="ni-uni" value="pza" placeholder="kg, pza, L…"></div>
       <div><label>Se compra por</label><input type="text" id="ni-empaque" placeholder="suelto / caja / paquete"></div>
       <div><label>Unidades por empaque</label><input type="number" inputmode="numeric" id="ni-factor" value="1"></div>
-      <div><label>Costo por unidad</label><input type="number" inputmode="decimal" id="ni-costo" placeholder="0"></div>
+      <div><label>Costo (como lo compras: por empaque si lo hay)</label><input type="number" inputmode="decimal" id="ni-costo" placeholder="0"></div>
       <div><label>Par por tienda</label><input type="number" inputmode="numeric" id="ni-par" value="1"></div>
       <div style="grid-column:1 / -1"><label>Proveedor</label><input type="text" id="ni-prov" list="provs-list" placeholder="¿Quién lo surte?"></div>
       <div style="grid-column:1 / -1">
