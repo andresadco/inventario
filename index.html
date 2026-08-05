@@ -394,6 +394,17 @@ input:focus,select:focus{outline:none;border-color:var(--fresa);box-shadow:0 0 0
 .acciones{display:flex;gap:8px;width:100%;margin-top:10px}
 .acciones .btn{flex:1}
 
+/* ===== Hoy: pasos del día ===== */
+.paso{display:flex;align-items:center;gap:14px;padding:18px 16px;margin-bottom:10px;cursor:pointer;transition:transform .12s}
+.paso:active{transform:scale(.98)}
+.pnum{width:42px;height:42px;border-radius:50%;background:var(--fresa);color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;flex:none}
+.paso.listo .pnum{background:var(--leaf)}
+.ptxt{flex:1;min-width:0}
+.ptxt b{display:block;font-size:16.5px;line-height:1.25}
+.ptxt span{font-size:12.5px;color:var(--muted);line-height:1.5;display:block;margin-top:3px}
+.pgo{color:var(--faint);font-size:26px;flex:none}
+.linkmov{display:block;margin:16px auto 0;color:var(--muted);font-size:13px;font-weight:700;text-decoration:underline}
+
 /* ===== Panel ===== */
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .kpi{padding:15px}
@@ -426,7 +437,9 @@ input:focus,select:focus{outline:none;border-color:var(--fresa);box-shadow:0 0 0
   opacity:0;visibility:hidden;pointer-events:none;transform:translateY(14px);
   transition:opacity .22s ease, transform .28s cubic-bezier(.2,.8,.2,1), visibility 0s linear .3s;
 }
-#toast.on{opacity:1;visibility:visible;transform:translateY(0);transition-delay:0s}
+#toast.on{opacity:1;visibility:visible;transform:translateY(0);transition-delay:0s;pointer-events:auto}
+#toast{display:flex;align-items:center;justify-content:center;gap:14px}
+.tundo{color:#FF8FA5;font-weight:800;font-size:14px;padding:4px 8px;flex:none;text-transform:uppercase;letter-spacing:.04em}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 @media(min-width:820px){
@@ -511,7 +524,7 @@ const LOCS = {
 const TIENDAS = ['moctezuma','narvarte','balbuena'];
 
 let CAT=[], INV={}, INVD={}, NIV={}, MOV=[], REQ=[], PRES={}, EQUIPO=[], draft={};
-let sesion=null, who='moctezuma', tab='inv', q='', filtroCat='', cargando=false;
+let sesion=null, who='moctezuma', tab='hoy', q='', filtroCat='', cargando=false;
 let modoConteo=false, conteo={};
 let compView='prov', masOpen=false;   // conteo = capturas pendientes de guardar
 
@@ -648,17 +661,37 @@ async function sincronizar(){ await cargar(); render(); toast('Actualizado'); }
 async function ajustar(loc,id,val){
   const it = item(id);
   const nueva = limpiaCant(it, val);
-  if (nueva === stock(loc,id)) return;
+  const antes = stock(loc,id);
+  if (nueva === antes) return;
   INV[loc][id] = nueva; render();
   setDot('busy');
   const { error } = await db.rpc('lfi_ajustar', {p_suc:loc, p_insumo:id, p_nueva:nueva, p_por:quien()});
-  if (error) toast('No se guardó. Revisa tu internet.');
+  if (error){ toast('No se guardó. Revisa tu internet.'); await cargar(true); render(); return; }
+  toastAccion(`${esc(it?it.nombre:'')} → ${fmtCant(it,nueva)}`, 'Deshacer', () => ajustar(loc, id, antes));
   await cargar(true); render();
 }
 function addDraft(id,c){
   const v = limpiaCant(item(id), c);
   if (v === 0) delete draft[id]; else draft[id] = v;
   render();
+}
+/* Precarga la comanda con el último pedido que hizo esta tienda */
+function ultimoPedidoTienda(){
+  return REQ.filter(r => r.tipo === 'tienda' && r.sucursal === who && r.lineas && r.lineas.length)
+            .sort((a,b) => (b.created_at||b.fecha||'').localeCompare(a.created_at||a.fecha||''))[0] || null;
+}
+function repetirUltimo(){
+  const r = ultimoPedidoTienda();
+  if (!r){ toast('Todavía no tienes pedidos previos.'); return; }
+  let n = 0;
+  r.lineas.forEach(l => {
+    const i = item(l.insumo_id); if (!i) return;
+    if (l.desglose && esMulti(i)) draft[l.insumo_id] = {...l.desglose};
+    else { const c = Number(l.cant || l.aprob) || 0; if (c > 0) draft[l.insumo_id] = c; }
+    n++;
+  });
+  render();
+  toast(`📋 Comanda precargada con tu pedido del ${r.fecha} (${n} insumos). Ajusta y envía.`);
 }
 /* ===== Items multi (fresa): se piden por caja, eligiendo cuántas de cada tamaño ===== */
 const esMulti = i => i && i.multi && (PRES[i.id] || []).length > 0;
@@ -1025,6 +1058,65 @@ async function enviarDiario(){
   toast('✅ Pedido del día enviado');
   await cargar(true); render();
 }
+/* ===== Hoy: la app te dice qué toca, en vez de ofrecerte pantallas ===== */
+function irConteo(){
+  tab = 'inv';
+  if (!modoConteo) toggleConteo();
+  else { window.scrollTo(0,0); render(); }
+}
+function vHoy(){
+  const h = new Date().getHours();
+  const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
+
+  if (!isDir()){
+    const contoHoy = MOV.some(m => m.tipo === 'ajuste' && String(m.created_at).slice(0,10) === hoy());
+    const pedHoy = REQ.find(r => r.tipo === 'tienda' && r.sucursal === who && r.fecha === hoy());
+    const estadoPed = pedHoy ? ({enviado:'enviado, esperando surtido', aprobado:'aprobado, viene en camino', surtido:'surtido ✓'}[pedHoy.estado] || pedHoy.estado) : null;
+    return `<h2 class="page">${saludo}, ${esc(quien())}</h2>
+    <p class="sub">Tu día en dos pasos. Todo lo demás vive en el menú de abajo, por si lo necesitas.</p>
+    <div class="card paso ${contoHoy?'listo':''}" onclick="irConteo()">
+      <div class="pnum">${contoHoy?'✓':'1'}</div>
+      <div class="ptxt"><b>Cuenta tu inventario</b>
+        <span>${contoHoy ? 'Ya contaste hoy. Entra de nuevo si te faltó algo.' : 'Captura lo que hay. Se guarda solo.'}</span></div>
+      <div class="pgo">›</div>
+    </div>
+    <div class="card paso ${pedHoy?'listo':''}" onclick="irTab('req')">
+      <div class="pnum">${pedHoy?'✓':'2'}</div>
+      <div class="ptxt"><b>Pide lo de hoy 🍓</b>
+        <span>${pedHoy ? 'Tu pedido de hoy está: <b>'+estadoPed+'</b>' : 'La fresa del día y lo que te falte.'}</span></div>
+      <div class="pgo">›</div>
+    </div>
+    <button class="linkmov" onclick="irTab('mov')">Ver historial de movimientos</button>`;
+  }
+
+  const pend = REQ.filter(r => r.tipo==='tienda' && r.estado==='enviado').length;
+  const porSurtir = REQ.filter(r => r.tipo==='tienda' && r.estado==='aprobado').length;
+  const nec = necesidades().length;
+  const rec = REQ.filter(r => r.tipo==='compra' && ['aprobado','enviado'].includes(r.estado)).length;
+  const alDia = !pend && !porSurtir && !nec && !rec;
+  return `<h2 class="page">${saludo}, ${esc(quien())}</h2>
+  <p class="sub">Lo que toca hoy, en orden. Toca un paso para ir directo.</p>
+  ${alDia ? `<div class="card empty"><div class="emx">🎉</div><b>Todo al día</b>Sin pedidos pendientes, nada que comprar, nada por recibir.</div>` : ''}
+  <div class="card paso ${(pend+porSurtir)?'':'listo'}" onclick="irTab('ped')">
+    <div class="pnum">${(pend+porSurtir) ? (pend+porSurtir) : '✓'}</div>
+    <div class="ptxt"><b>Surte los pedidos de las tiendas</b>
+      <span>${(pend+porSurtir) ? (pend ? pend+' por aprobar' : '') + (pend&&porSurtir?' · ':'') + (porSurtir ? porSurtir+' por surtir' : '') : 'Nada pendiente de las tiendas.'}</span></div>
+    <div class="pgo">›</div>
+  </div>
+  <div class="card paso ${nec?'':'listo'}" onclick="who='centro';irTab('req')">
+    <div class="pnum">${nec || '✓'}</div>
+    <div class="ptxt"><b>Compra lo que no alcanza</b>
+      <span>${nec ? nec+' insumos que tu bodega no cubre.' : 'Tu bodega cubre todo lo pedido.'}</span></div>
+    <div class="pgo">›</div>
+  </div>
+  <div class="card paso ${rec?'':'listo'}" onclick="irTab('com')">
+    <div class="pnum">${rec || '✓'}</div>
+    <div class="ptxt"><b>Recibe lo que llega</b>
+      <span>${rec ? rec+' órdenes de compra en curso (envíalas o recíbelas con su foto).' : 'Sin órdenes en curso.'}</span></div>
+    <div class="pgo">›</div>
+  </div>`;
+}
+
 function selectorInsumos(rid){
   const ya = (REQ.find(x => x.id === rid)?.lineas || []).map(l => l.insumo_id);
   const opts = CAT.filter(i => !ya.includes(i.id))
@@ -1586,8 +1678,11 @@ function vRequerimiento(){
   }
   return `<h2 class="page">Pedir</h2>
   ${bloqueDiario()}
-  <p class="sub" style="margin-top:16px">¿Necesitas más cosas? Dale a <b>Llenado automático</b> o búscalas abajo.</p>
-  <button class="btn ghost wide" onclick="autollenar()" style="margin-bottom:4px">✨ Llenado automático (todo lo que falta)</button>
+  <p class="sub" style="margin-top:16px">¿Necesitas más cosas? Repite tu pedido anterior, usa el llenado automático, o búscalas abajo.</p>
+  <div class="expbar sm" style="margin:0 0 4px">
+    ${ultimoPedidoTienda() ? `<button class="btn sm ghost" onclick="repetirUltimo()">🔁 Repetir mi último pedido</button>` : ''}
+    <button class="btn sm ghost" onclick="autollenar()">✨ Llenado automático</button>
+  </div>
   ${barra()}
   ${html || '<div class="card empty"><b>Sin resultados</b>Prueba con otra búsqueda.</div>'}`;
 }
@@ -2097,19 +2192,19 @@ function vCatalogo(){
 }
 
 /* ===== Render ===== */
-const ICONOS = {inv:'📦', req:'📝', ped:'🚚', com:'🛒', pan:'📊', mov:'🕓', cat:'⚙️', eq:'👥'};
+const ICONOS = {hoy:'🏠', inv:'📦', req:'📝', ped:'🚚', com:'🛒', pan:'📊', mov:'🕓', cat:'⚙️', eq:'👥'};
 function render(){
   const pend = REQ.filter(r => r.tipo==='tienda' && r.estado==='enviado').length;
   const rec  = REQ.filter(r => r.tipo==='compra' && ['aprobado','enviado'].includes(r.estado)).length;
   const porComprar = isDir() ? necesidades().length : 0;
 
-  const MAS = ['pan','mov','cat','eq'];
+  const MAS = ['com','pan','mov','cat','eq'];
   const tabs = isDir()
-    ? [['inv','Inventario',0], ['req', verCentro()?'Comprar':'Pedir', verCentro()?porComprar:0], ['ped','Pedidos',pend], ['com','Compras',rec]]
-    : [['inv','Inventario',0], ['req','Pedir',0], ['ped','Pedidos',0], ['mov','Historial',0]];
+    ? [['hoy','Hoy',0], ['inv','Inventario',0], ['req', verCentro()?'Comprar':'Pedir', verCentro()?porComprar:0], ['ped','Pedidos',pend]]
+    : [['hoy','Hoy',0], ['inv','Inventario',0], ['req','Pedir',0], ['ped','Pedidos',0]];
 
-  const views = {inv:vInventario, req:vRequerimiento, ped:vPedidos, com:vCompras, pan:vPanel, mov:vMovimientos, cat:vCatalogo, eq:vEquipo};
-  if (!views[tab] || (['com','pan','cat','eq'].includes(tab) && !isDir())) tab = 'inv';
+  const views = {hoy:vHoy, inv:vInventario, req:vRequerimiento, ped:vPedidos, com:vCompras, pan:vPanel, mov:vMovimientos, cat:vCatalogo, eq:vEquipo};
+  if (!views[tab] || (['com','pan','cat','eq'].includes(tab) && !isDir())) tab = 'hoy';
 
   document.getElementById('ctxslot').innerHTML = isDir()
     ? `<select class="aqui" id="who">${Object.keys(LOCS).map(l => `<option value="${l}" ${who===l?'selected':''}>${LOCS[l].short}</option>`).join('')}</select>`
@@ -2119,13 +2214,13 @@ function render(){
     await cargar(); render();
   };
 
-  const NOMBRES_MAS = {pan:'Panel', mov:'Historial', cat:'Catálogo', eq:'Equipo'};
+  const NOMBRES_MAS = {com:'Compras', pan:'Panel', mov:'Historial', cat:'Catálogo', eq:'Equipo'};
   let navHtml = tabs.map(([k,n,p]) =>
     `<button class="${tab===k?'on':''}" onclick="irTab('${k}')">
       <span class="tic">${ICONOS[k]}</span>${n}${p?`<span class="pip">${p}</span>`:''}</button>`).join('');
   if (isDir()){
     navHtml += `<button class="${MAS.includes(tab)?'on':''}" onclick="masOpen=true;render()">
-      <span class="tic">⋯</span>Más</button>`;
+      <span class="tic">⋯</span>Más${rec?`<span class="pip">${rec}</span>`:''}</button>`;
   }
   document.getElementById('nav').innerHTML = navHtml;
   document.getElementById('masslot').innerHTML = isDir() ? `
@@ -2163,6 +2258,15 @@ function toast(m){
   const t = document.getElementById('toast');
   t.textContent = m; t.classList.add('on');
   clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 3200);
+}
+/* Toast con botón de acción (ej. Deshacer) */
+let toastFn = null;
+function toastAccion(m, etiqueta, fn){
+  const t = document.getElementById('toast');
+  toastFn = fn;
+  t.innerHTML = `<span>${m}</span><button class="tundo" onclick="toastFn&&toastFn();toastFn=null;this.closest('#toast').classList.remove('on')">${etiqueta}</button>`;
+  t.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(() => { t.classList.remove('on'); toastFn = null; }, 5000);
 }
 
 function ocupado(){
