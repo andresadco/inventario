@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Lady Fresa · Inventario simple</title>
+<title>Lady Fresa · Inventario</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍓</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -14,19 +13,17 @@
   --ink:#2B1A1F; --muted:#8A7178; --faint:#B7A4A9;
   --cream:#FFF7F4; --line:#F5E3E7; --line2:#EED4DA;
   --leaf:#2F8F5B; --leaf-soft:#E9F6EF; --amber:#D98614; --amber-soft:#FCF2E2;
-  --azul:#1F6B8C; --azul-soft:#EFF6FA;
   --shadow:0 1px 2px rgba(43,26,31,.04), 0 8px 24px -16px rgba(43,26,31,.16);
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:'Archivo',system-ui,sans-serif;background:var(--cream);color:var(--ink);font-size:16px;-webkit-font-smoothing:antialiased;padding-bottom:calc(92px + var(--safe-b))}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;transition:transform .12s, background .15s}
-button:active{transform:scale(.97)}
+button:active{transform:scale(.96)}
 input,select{font-family:inherit;color:inherit;font-size:16px}
 .wrap{max-width:720px;margin:0 auto;padding:0 16px}
 .mono{font-family:'IBM Plex Mono',monospace}
 
-/* Login */
 #login{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:22px}
 .loginbox{width:100%;max-width:380px;text-align:center}
 .loginbox .big{font-family:'Instrument Serif',serif;font-size:44px;margin-bottom:2px}
@@ -40,7 +37,6 @@ input,select{font-family:inherit;color:inherit;font-size:16px}
 .loginerr{color:var(--fresa);font-size:13px;font-weight:700;margin-bottom:10px;min-height:18px}
 input:focus,select:focus{outline:none;border-color:var(--fresa);box-shadow:0 0 0 3px rgba(232,41,75,.13)}
 
-/* Header */
 header{background:var(--ink);color:#fff;position:sticky;top:0;z-index:40;padding-top:env(safe-area-inset-top,0px)}
 .hrow{display:flex;align-items:center;gap:10px;padding:11px 16px;max-width:720px;margin:0 auto}
 .brand{font-family:'Instrument Serif',serif;font-size:20px;white-space:nowrap}
@@ -48,7 +44,6 @@ header{background:var(--ink);color:#fff;position:sticky;top:0;z-index:40;padding
 .aqui{margin-left:auto;background:rgba(255,255,255,.09);border-radius:20px;padding:7px 12px;font-size:12px;font-weight:700;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .iconbtn{color:#C8B3B8;font-size:12px;font-weight:700;padding:11px 8px}
 
-/* Página */
 h2.page{font-family:'Instrument Serif',serif;font-size:26px;font-weight:400;margin:18px 0 4px}
 p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;max-width:56ch}
 .seccion{font-size:11px;text-transform:uppercase;letter-spacing:.13em;font-weight:800;color:var(--faint);margin:20px 0 8px}
@@ -56,7 +51,6 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:5px}
 .empty .emx{font-size:34px;margin-bottom:8px}
 
-/* Búsqueda */
 .sticky{position:sticky;top:calc(52px + env(safe-area-inset-top,0px));z-index:30;background:var(--cream);padding:8px 0;margin:0 -16px;padding-left:16px;padding-right:16px}
 .searchbar{width:100%;padding:13px 16px;border-radius:14px;border:1px solid var(--line);background:#fff}
 .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-top:9px}
@@ -64,22 +58,39 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .chip{border:1px solid var(--line2);background:#fff;border-radius:20px;padding:10px 15px;font-size:12.5px;font-weight:700;color:var(--muted);white-space:nowrap;flex:none}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 
-/* Fila de conteo: nombre + un solo campo grande */
-.fila{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
-.fila .dot{width:9px;height:9px;border-radius:50%;flex:none;background:#DDD2D5}
-.fila .dot.out{background:var(--fresa)} .fila .dot.low{background:var(--amber)} .fila .dot.ok{background:var(--leaf)}
+/* Fila tienda: nombre + campo + pedir */
+.fila{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px;box-shadow:var(--shadow)}
 .fila .fx{flex:1;min-width:0}
 .fila .nm{font-weight:700;font-size:15.5px;line-height:1.25;word-break:break-word}
 .fila .mt{font-size:11.5px;color:var(--faint);margin-top:3px;font-weight:600}
-.cant{width:92px;height:52px;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:20px;border:2px solid var(--line2);border-radius:12px;background:#fff;flex:none}
+.cant{width:86px;height:52px;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:20px;border:2px solid var(--line2);border-radius:12px;background:#fff;flex:none}
 .cant:focus{border-color:var(--fresa);box-shadow:none;background:var(--fresa-soft)}
 .cant.cero{color:var(--faint)}
+.pedirbtn{flex:none;font-size:11px;font-weight:800;border:1px solid var(--line2);border-radius:11px;padding:8px 10px;color:var(--muted);min-height:52px}
+.pedirbtn.on{background:var(--fresa);border-color:var(--fresa);color:#fff}
 .cajitas{display:flex;gap:8px;flex:none}
 .cajitas .cj{text-align:center}
-.cajitas label{display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px}
-.cajitas .cant{width:64px;height:48px;font-size:17px}
+.cajitas label{display:block;font-size:9px;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.cajitas .cant{width:60px;height:48px;font-size:17px}
 
-/* Bloques de reparto / compra */
+/* Excel vivo (dirección) */
+.xr{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow)}
+.xr .top{display:flex;align-items:center;gap:8px}
+.xr .nm{font-weight:700;font-size:15px;flex:1;min-width:0;line-height:1.25}
+.dias{font-size:11px;font-weight:800;border-radius:20px;padding:4px 9px;flex:none}
+.dias.rojo{background:#FCE7EB;color:var(--fresa-dark)}
+.dias.ambar{background:var(--amber-soft);color:var(--amber)}
+.dias.verde{background:var(--leaf-soft);color:var(--leaf)}
+.dias.gris{background:#F3E9EC;color:var(--muted)}
+.tot{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;flex:none}
+.tot .u{font-size:10px;color:var(--muted);font-weight:600}
+.xg{display:flex;gap:6px;margin-top:9px}
+.xg .c{flex:1;text-align:center}
+.xg label{display:block;font-size:9px;font-weight:800;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+.xg input{width:100%;height:42px;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;border:1.5px solid var(--line2);border-radius:10px;background:#fff}
+.xg input:disabled{background:#FAF5F6;color:var(--muted);border-style:dashed}
+
+/* Bloques compra / solicitudes */
 .bloque{background:#fff;border:1px solid var(--line);border-radius:16px;margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow)}
 .bhead{background:var(--ink);color:#fff;padding:12px 15px;display:flex;align-items:center;gap:10px}
 .bhead b{font-size:15px}
@@ -88,21 +99,18 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .linea:last-of-type{border-bottom:none}
 .linea .lx{flex:1;min-width:0}
 .linea .nm{font-weight:700;font-size:14.5px;line-height:1.25}
-.linea .mt{font-size:11.5px;color:var(--muted);margin-top:2px}
-.linea .mt b{color:var(--fresa)}
-.linea .cant{width:76px;height:46px;font-size:17px}
+.linea .mt{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.45}
+.linea .cant{width:74px;height:46px;font-size:17px}
 .linea .cant.hecha{border-color:#BFE3CE;color:var(--leaf);background:#F8FCF9}
-.uni{font-size:10.5px;color:var(--muted);font-weight:700;flex:none;width:52px}
+.uni{font-size:10.5px;color:var(--muted);font-weight:700;flex:none;max-width:56px}
 .bfoot{padding:12px 14px;background:#FFFBFA;border-top:1px solid var(--line);display:flex;gap:8px}
 .btn{background:var(--fresa);color:#fff;border-radius:12px;padding:13px 16px;font-weight:700;font-size:14px;box-shadow:0 4px 14px -6px rgba(232,41,75,.5)}
 .btn:active{background:var(--fresa-dark)}
-.btn:disabled{opacity:.35;box-shadow:none}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line2);box-shadow:none}
 .btn.wide{width:100%}
 .bfoot .btn{flex:1}
-.hecho-tag{margin-left:auto;font-size:11px;font-weight:800;color:var(--leaf)}
+.okbtn{flex:none;height:46px;padding:0 13px;background:var(--fresa);color:#fff;border-radius:12px;font-weight:800}
 
-/* Menú inferior */
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:45;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;padding-bottom:var(--safe-b);box-shadow:0 -6px 24px -14px rgba(43,26,31,.28)}
 .tabbar button{flex:1;padding:10px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--faint);position:relative;min-height:62px;justify-content:center}
 .tabbar .tic{font-size:21px;line-height:1;filter:grayscale(1) opacity(.55)}
@@ -111,19 +119,18 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .tabbar button.on::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:26px;height:3px;border-radius:0 0 3px 3px;background:var(--fresa)}
 .tabbar .pip{position:absolute;top:6px;right:calc(50% - 22px);min-width:17px;height:17px;line-height:17px;background:var(--fresa);color:#fff;border-radius:9px;font-size:10px;font-weight:800;padding:0 4px}
 
-#toast{position:fixed;left:16px;right:16px;bottom:calc(100px + var(--safe-b));background:var(--ink);color:#fff;padding:14px 18px;border-radius:14px;font-size:14px;font-weight:600;z-index:80;box-shadow:0 12px 32px -10px rgba(0,0,0,.45);text-align:center;max-width:520px;margin:0 auto;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(14px);transition:opacity .22s, transform .28s cubic-bezier(.2,.8,.2,1), visibility 0s linear .3s;display:flex;align-items:center;justify-content:center;gap:14px}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(100px + var(--safe-b));background:var(--ink);color:#fff;padding:14px 18px;border-radius:14px;font-size:14px;font-weight:600;z-index:80;box-shadow:0 12px 32px -10px rgba(0,0,0,.45);text-align:center;max-width:520px;margin:0 auto;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(14px);transition:opacity .22s, transform .28s, visibility 0s linear .3s;display:flex;align-items:center;justify-content:center;gap:14px}
 #toast.on{opacity:1;visibility:visible;transform:translateY(0);transition-delay:0s;pointer-events:auto}
-.tundo{color:#FF8FA5;font-weight:800;font-size:14px;padding:4px 8px;text-transform:uppercase;letter-spacing:.04em}
+.tundo{color:#FF8FA5;font-weight:800;font-size:14px;padding:4px 8px;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 
-<!-- Login -->
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Inventario · versión simple</div>
+    <div class="sublog">Control de inventarios</div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -136,7 +143,6 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
   </div>
 </div>
 
-<!-- App -->
 <div id="shell" style="display:none">
   <header><div class="hrow">
     <div class="brand">🍓 <em>Lady Fresa</em></div>
@@ -154,47 +160,51 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 const db = supabase.createClient('https://ngpumyxxxlafuzcsaepy.supabase.co','sb_publishable_6Kma0iIJ6mFCK1A7YTDnRw_HKqxsLQv');
 
 const LOCS = {
-  centro:    {n:'Comisariato (CEDIS)', short:'CEDIS'},
-  moctezuma: {n:'Tienda Moctezuma',    short:'Moctezuma'},
-  narvarte:  {n:'Tienda Narvarte',     short:'Narvarte'},
-  balbuena:  {n:'Tienda Balbuena',     short:'Balbuena'},
+  centro:    {n:'Bodega (CEDIS)', short:'CEDIS', mini:'CED'},
+  moctezuma: {n:'Tienda Moctezuma', short:'Moctezuma', mini:'MOC'},
+  narvarte:  {n:'Tienda Narvarte', short:'Narvarte', mini:'NAR'},
+  balbuena:  {n:'Tienda Balbuena', short:'Balbuena', mini:'BAL'},
 };
-const TIENDAS = ['moctezuma','narvarte','balbuena'];
-const hoy = () => new Date().toISOString().slice(0,10);
+const ORDEN_LOCS = ['moctezuma','narvarte','balbuena','centro'];
 const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hoy = () => new Date().toISOString().slice(0,10);
 
-let CAT=[], INV={}, INVD={}, NIV={}, PRES={};
-let sesion=null, who='moctezuma', tab='contar', q='', fcat='', soloVenta=true;
-let hechasRep = {}, hechasCom = {};   // marcas de "ya lo llevé / ya llegó" en esta sesión
+let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[];
+let sesion=null, tab='inv', q='', fcat='', soloVenta=true, hechasCom={}, pidiendo=null;
 
 const isDir = () => sesion && sesion.rol === 'direccion';
 const quien = () => (sesion && sesion.nombre) || 'Alguien';
 const item = id => CAT.find(i => i.id === id);
 const stock = (l,id) => Number((INV[l]||{})[id]) || 0;
-const niv = (l,id) => { const n = (NIV[l]||{})[id] || {}; return {min:Number(n.min_nivel)||0, par:Number(n.par_nivel)||0}; };
 const esFrac = i => !!(i && i.fraccion);
 const esMulti = i => !!(i && i.multi && (PRES[i.id]||[]).length);
 const cajasDe = id => PRES[id] || [];
 const fmtCant = (i,n) => { const v = Number(n)||0; return esFrac(i) ? (Math.round(v*1000)/1000).toLocaleString('es-MX',{maximumFractionDigits:3}) : String(Math.round(v)); };
 const limpia = (i,n) => esFrac(i) ? Math.max(0, Math.round((Number(n)||0)*1000)/1000) : Math.max(0, Math.round(Number(n)||0));
-const estado = (l,id) => { const s = stock(l,id), {min,par} = niv(l,id); if (!par) return 'na'; if (s<=0) return 'out'; if (s<min) return 'low'; return 'ok'; };
+const posTotal = id => ORDEN_LOCS.reduce((a,l) => a + stock(l,id), 0);
 const stockCajas = (l,id) => { const d = (INVD[l]||{})[id] || {}; return cajasDe(id).reduce((a,p)=>a+(Number(d[p.id])||0),0); };
 const desgloseDe = (l,id) => (INVD[l]||{})[id] || {};
 
-/* ===== Datos ===== */
+/* Cobertura: cuántos días te alcanza lo que hay en TODO el negocio */
+function cobertura(i){
+  const c = Number(i.consumo_mes)||0;
+  if (!c) return null;
+  return Math.floor(posTotal(i.id) / (c/30));
+}
+
 async function cargar(){
-  const [ins, stk, nvl, prs] = await Promise.all([
+  const [ins, stk, prs, sol] = await Promise.all([
     db.from('lfi_insumos').select('*').eq('activo', true).order('categoria').order('nombre'),
     db.from('lfi_stock').select('*'),
-    db.from('lfi_niveles').select('*'),
     db.from('lfi_presentaciones').select('*').order('orden'),
+    db.from('lfi_solicitudes').select('*').eq('resuelto', false).order('created_at'),
   ]);
   CAT = ins.data || [];
-  INV = {}; INVD = {}; NIV = {}; PRES = {};
-  Object.keys(LOCS).forEach(l => { INV[l]={}; INVD[l]={}; NIV[l]={}; });
+  INV = {}; INVD = {}; PRES = {};
+  Object.keys(LOCS).forEach(l => { INV[l]={}; INVD[l]={}; });
   (stk.data||[]).forEach(s => { if(INV[s.sucursal]){ INV[s.sucursal][s.insumo_id]=Number(s.cantidad); if(s.desglose) INVD[s.sucursal][s.insumo_id]=s.desglose; } });
-  (nvl.data||[]).forEach(n => { if(NIV[n.sucursal]) NIV[n.sucursal][n.insumo_id]=n; });
   (prs.data||[]).forEach(p => { (PRES[p.insumo_id]=PRES[p.insumo_id]||[]).push(p); });
+  SOLIC = sol.data || [];
 }
 
 /* ===== Sesión ===== */
@@ -208,8 +218,7 @@ async function entrar(){
   if (!data){ err.textContent='PIN incorrecto para esa sucursal.'; return; }
   sesion = {sucursal:data.sucursal, rol:data.rol, nombre:data.nombre || LOCS[data.sucursal].short};
   try{ localStorage.setItem('lfs_sesion', JSON.stringify(sesion)); }catch(e){}
-  who = isDir() ? 'centro' : sesion.sucursal;
-  tab = isDir() ? 'rep' : 'contar';
+  tab = 'inv';
   await arrancar();
 }
 async function arrancar(){
@@ -217,110 +226,92 @@ async function arrancar(){
   document.getElementById('shell').style.display='';
   await cargar(); render();
 }
-function salir(){
-  try{ localStorage.removeItem('lfs_sesion'); }catch(e){}
-  location.reload();
-}
+function salir(){ try{ localStorage.removeItem('lfs_sesion'); }catch(e){} location.reload(); }
 
-/* ===== Acciones ===== */
+/* ===== Toast ===== */
 let toastT=null, toastFn=null;
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),3000); }
 function toastAccion(m, et, fn){ const t=document.getElementById('toast'); toastFn=fn;
   t.innerHTML=`<span>${m}</span><button class="tundo" onclick="toastFn&&toastFn();toastFn=null;this.closest('#toast').classList.remove('on')">${et}</button>`;
   t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>{t.classList.remove('on');toastFn=null;},5000); }
 
+/* ===== Acciones ===== */
 async function contar(loc, id, val){
   const i = item(id); const nueva = limpia(i, val); const antes = stock(loc,id);
   if (nueva === antes) return;
   INV[loc][id] = nueva;
   const { error } = await db.rpc('lfi_ajustar', {p_suc:loc, p_insumo:id, p_nueva:nueva, p_por:quien()});
   if (error){ toast('No se guardó. Revisa tu internet.'); INV[loc][id]=antes; render(); return; }
-  toastAccion(`${esc(i.nombre)} → ${fmtCant(i,nueva)}`, 'Deshacer', () => contar(loc, id, antes));
+  toastAccion(`${esc(i.nombre)} ${LOCS[loc].mini} → ${fmtCant(i,nueva)}`, 'Deshacer', () => contar(loc, id, antes));
   render();
 }
 async function contarCajas(loc, id){
   const dg = {};
   cajasDe(id).forEach(p => { const v = Math.max(0, Math.round(Number(document.getElementById(`cj-${loc}-${id}-${p.id}`)?.value)||0)); if (v>0) dg[p.id]=v; });
   const { error } = await db.rpc('lfi_ajustar_cajas', {p_suc:loc, p_insumo:id, p_desglose:dg, p_por:quien()});
-  if (error){ toast('No se guardó. Revisa tu internet.'); return; }
+  if (error){ toast('No se guardó.'); return; }
   toast('🍓 Fresa guardada');
   await cargar(); render();
 }
-/* Llevar de CEDIS a una tienda */
-async function llevar(tienda, id){
+/* La tienda avisa: "ya no tengo esto, mándame tanto" */
+function tieneSolic(loc, id){ return SOLIC.find(s => s.sucursal===loc && s.insumo_id===id); }
+function abrirPedir(id){
+  pidiendo = id; render();
+  setTimeout(() => document.getElementById('pd-'+id)?.focus(), 60);
+}
+async function confirmarPedir(loc, id){
   const i = item(id);
-  const v = limpia(i, document.getElementById(`ll-${tienda}-${id}`)?.value);
-  if (v <= 0){ toast('Pon cuánto vas a llevar.'); return; }
-  if (v > stock('centro', id)){ toast(`Solo tienes ${fmtCant(i, stock('centro',id))} en bodega.`); return; }
-  const r1 = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:id, p_delta:-v, p_tipo:'salida', p_nota:'Reparto a '+LOCS[tienda].short, p_por:quien()});
-  if (r1.error){ toast('No se pudo mover.'); return; }
-  await db.rpc('lfi_mover', {p_suc:tienda, p_insumo:id, p_delta:v, p_tipo:'entrada', p_nota:'Llegó del comisariato', p_por:quien()});
-  hechasRep[tienda+id] = true;
-  toast(`✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a ${LOCS[tienda].short}`);
+  const v = limpia(i, document.getElementById('pd-'+id)?.value);
+  const { error } = await db.from('lfi_solicitudes').insert({sucursal:loc, insumo_id:id, por:quien(), cantidad: v > 0 ? v : null});
+  pidiendo = null;
+  if (error){ toast('No se pudo avisar.'); render(); return; }
+  toast('🙋 Avisado. Andrés lo va a ver.');
   await cargar(); render();
 }
-async function llevarCajas(tienda, id){
-  const dg = {};
-  cajasDe(id).forEach(p => { const v = Math.max(0, Math.round(Number(document.getElementById(`llc-${tienda}-${id}-${p.id}`)?.value)||0)); if (v>0) dg[p.id]=v; });
-  if (!Object.keys(dg).length){ toast('Pon cuántas cajas llevas.'); return; }
-  const r1 = await db.rpc('lfi_mover_cajas', {p_suc:'centro', p_insumo:id, p_desglose:dg, p_signo:-1, p_nota:'Reparto a '+LOCS[tienda].short, p_por:quien()});
-  if (r1.error){ toast('No se pudo mover.'); return; }
-  await db.rpc('lfi_mover_cajas', {p_suc:tienda, p_insumo:id, p_desglose:dg, p_signo:1, p_nota:'Llegó del comisariato', p_por:quien()});
-  hechasRep[tienda+id] = true;
-  toast(`✓ Fresa a ${LOCS[tienda].short}`);
+async function quitarPedir(id){
+  const s = SOLIC.find(x => x.id === id);
+  if (!s) return;
+  await db.from('lfi_solicitudes').delete().eq('id', s.id);
+  toast('Aviso quitado');
   await cargar(); render();
 }
-/* Meter compra a bodega */
+async function resolver(sid){
+  await db.from('lfi_solicitudes').update({resuelto:true}).eq('id', sid);
+  toast('✓ Resuelto');
+  await cargar(); render();
+}
+/* Compra del mes: llegó → entra a bodega */
 async function llego(id){
   const i = item(id);
   const f = Math.max(1, Number(i.factor)||1);
   const raw = Number(document.getElementById(`cp-${id}`)?.value)||0;
-  const v = limpia(i, f > 1 ? raw * f : raw);   // se captura en empaques si los hay
+  const v = limpia(i, f > 1 ? raw * f : raw);
   if (v <= 0){ toast('Pon cuánto llegó.'); return; }
-  const { error } = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:id, p_delta:v, p_tipo:'entrada', p_nota:'Compra '+(i.proveedor||''), p_por:quien()});
+  const { error } = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:id, p_delta:v, p_tipo:'entrada', p_nota:'Compra del mes '+(i.proveedor||''), p_por:quien()});
   if (error){ toast('No se pudo registrar.'); return; }
   hechasCom[id] = true;
-  toast(`✓ ${esc(i.nombre)}: entraron ${fmtCant(i,v)} a bodega`);
-  await cargar(); render();
-}
-async function llegoCajas(id){
-  const dg = {};
-  cajasDe(id).forEach(p => { const v = Math.max(0, Math.round(Number(document.getElementById(`cpc-${id}-${p.id}`)?.value)||0)); if (v>0) dg[p.id]=v; });
-  if (!Object.keys(dg).length){ toast('Pon cuántas cajas llegaron.'); return; }
-  const { error } = await db.rpc('lfi_mover_cajas', {p_suc:'centro', p_insumo:id, p_desglose:dg, p_signo:1, p_nota:'Compra fresa', p_por:quien()});
-  if (error){ toast('No se pudo registrar.'); return; }
-  hechasCom[id] = true;
-  toast('✓ Fresa en bodega');
+  toast(`✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a bodega`);
   await cargar(); render();
 }
 function copiar(txt){ navigator.clipboard?.writeText(txt).then(()=>toast('Copiado. Pégalo en WhatsApp.')).catch(()=>toast('No se pudo copiar.')); }
 
-/* ===== Cálculos ===== */
-function faltantesTienda(t){
+/* ===== Compra del mes ===== */
+function compraMes(){
   return CAT.map(i => {
-    const {par} = niv(t, i.id); if (!par) return null;
-    const s = stock(t, i.id);
-    const falta = esFrac(i) ? Math.round((par-s)*10)/10 : Math.ceil(par-s);
-    if (falta <= 0) return null;
-    return {i, s, par, falta, urgente: estado(t,i.id)!=='ok'};
-  }).filter(Boolean).sort((a,b) => (b.urgente-a.urgente) || (b.i.diario-a.i.diario));
-}
-function faltantesCompra(){
-  return CAT.map(i => {
-    const par = Number(i.par_com)||0; if (!par) return null;
-    const s = stock('centro', i.id);
-    let falta = esFrac(i) ? Math.round((par-s)*10)/10 : Math.ceil(par-s);
+    if (i.diario) return null;                     // la fresa se compra diario, aparte
+    const c = Number(i.consumo_mes)||0; if (!c) return null;
+    const pos = posTotal(i.id);
+    let falta = esFrac(i) ? Math.round((c-pos)*10)/10 : Math.ceil(c-pos);
     if (falta <= 0) return null;
     const f = Math.max(1, Number(i.factor)||1);
-    const packs = f > 1 ? Math.ceil(falta / f) : falta;
-    return {i, s, par, falta, packs, f};
-  }).filter(Boolean);
+    const packs = f > 1 ? Math.ceil(falta/f) : falta;
+    return {i, pos, c, falta, packs, f, dias: cobertura(i)};
+  }).filter(Boolean).sort((a,b) => (a.dias??999) - (b.dias??999));
 }
 function textoCompra(prov, items){
-  const L = [`🍓 *Lady Fresa* — pedido ${hoy()}`, '', `*${prov}*`, ''];
+  const L = [`🍓 *Lady Fresa* — compra del mes (${hoy()})`, '', `*${prov}*`, ''];
   items.forEach(n => {
-    if (esMulti(n.i)) L.push(`• Fresa: *${n.falta} cajas* (confirmo tamaños)`);
-    else if (n.f > 1) L.push(`• ${n.i.nombre}: *${n.packs} ${n.i.empaque||'paquete'}${n.packs!==1?'s':''}*`);
+    if (n.f > 1) L.push(`• ${n.i.nombre}: *${n.packs} ${n.i.empaque||'paquete'}${n.packs!==1?'s':''}*`);
     else L.push(`• ${n.i.nombre}: *${fmtCant(n.i,n.falta)} ${n.i.unidad}*`);
   });
   L.push('', '¡Gracias!');
@@ -332,7 +323,6 @@ const cats = () => [...new Set(CAT.map(i => i.categoria))];
 const filtra = lista => lista.filter(i =>
   (!q || i.nombre.toLowerCase().includes(q.toLowerCase())) &&
   (!fcat || i.categoria === fcat));
-
 function barra(){
   return `<div class="sticky">
     <input type="text" class="searchbar" placeholder="Buscar…" value="${esc(q)}"
@@ -344,96 +334,105 @@ function barra(){
     </div>
   </div>`;
 }
+const baseLista = () => filtra(CAT.filter(i => soloVenta ? (Number(i.consumo_mes)>0 || i.diario) : true));
 
-/* Lista de conteo/edición de una ubicación (la lista ES el conteo) */
-function listaConteo(loc){
-  let base = CAT.filter(i => soloVenta ? (niv(loc,i.id).par > 0 || Number(i.par_com) > 0 || i.diario) : true);
-  base = filtra(base);
+/* — TIENDA: contar + avisar — */
+function vTienda(){
+  const loc = sesion.sucursal;
   let html = '', cat = '';
-  for (const i of base){
+  for (const i of baseLista()){
     if (i.categoria !== cat){ cat = i.categoria; html += `<div class="seccion">${esc(cat)}</div>`; }
+    const sol = tieneSolic(loc, i.id);
     if (esMulti(i)){
       const dg = desgloseDe(loc, i.id);
       html += `<div class="fila">
-        <div class="dot ${estado(loc,i.id)}"></div>
-        <div class="fx"><div class="nm">${esc(i.nombre)} 🍓</div>
-          <div class="mt">${stockCajas(loc,i.id)} cajas · escribe cuántas hay y toca ✓</div></div>
+        <div class="fx"><div class="nm">${esc(i.nombre)} 🍓</div><div class="mt">cajas que tienes · guarda con ✓</div></div>
         <div class="cajitas">
           ${cajasDe(i.id).map(p => `<div class="cj"><label>${esc(p.nombre.replace('Caja ',''))}</label>
-            <input class="cant" type="number" inputmode="numeric" id="cj-${loc}-${i.id}-${p.id}" value="${dg[p.id]||''}" placeholder="0"
-              onfocus="this.select()"></div>`).join('')}
-          <div class="cj"><label>&nbsp;</label><button class="btn" style="height:48px;padding:0 14px" onclick="contarCajas('${loc}','${i.id}')">✓</button></div>
+            <input class="cant" type="number" inputmode="numeric" id="cj-${loc}-${i.id}-${p.id}" value="${dg[p.id]||''}" placeholder="0" onfocus="this.select()"></div>`).join('')}
+          <div class="cj"><label>&nbsp;</label><button class="okbtn" style="height:48px" onclick="contarCajas('${loc}','${i.id}')">✓</button></div>
         </div>
       </div>`;
       continue;
     }
     const s = stock(loc, i.id);
-    const {par} = niv(loc, i.id);
     html += `<div class="fila">
-      <div class="dot ${estado(loc,i.id)}"></div>
-      <div class="fx"><div class="nm">${esc(i.nombre)}</div>
-        <div class="mt">${esc(i.unidad)}${par ? ' · meta '+fmtCant(i,par) : ''}${esFrac(i) ? ' · decimales ok' : ''}</div></div>
+      <div class="fx"><div class="nm">${esc(i.nombre)}</div><div class="mt">${esc(i.unidad)}</div></div>
       <input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
         value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)">
+      ${sol
+        ? `<button class="pedirbtn on" onclick="quitarPedir(${sol.id})">🙋 ${sol.cantidad ? fmtCant(i,sol.cantidad)+' '+esc(i.unidad) : 'Pedido'}</button>`
+        : pidiendo === i.id
+        ? `<input class="cant" style="width:70px" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" id="pd-${i.id}" placeholder="¿cuánto?"
+             onkeydown="if(event.key==='Enter')confirmarPedir('${loc}','${i.id}')">
+           <button class="okbtn" onclick="confirmarPedir('${loc}','${i.id}')">✓</button>`
+        : `<button class="pedirbtn" onclick="abrirPedir('${i.id}')">🙋 Pedir</button>`}
     </div>`;
   }
-  return html || '<div class="card empty"><b>Sin resultados</b>Prueba con otra búsqueda.</div>';
-}
-
-function vContar(){
-  const loc = isDir() ? who : sesion.sucursal;
-  return `<h2 class="page">${isDir() ? 'Inventario' : 'Contar'}</h2>
-  ${isDir() ? `<p class="sub">Elige la ubicación y corrige lo que sea. Escribes el número y se guarda solo.</p>
-    <select style="width:100%;padding:13px;border:1px solid var(--line2);border-radius:12px;background:#fff;margin-bottom:6px"
-      onchange="who=this.value;render()">${Object.keys(LOCS).map(l => `<option value="${l}" ${who===l?'selected':''}>${LOCS[l].n}</option>`).join('')}</select>`
-  : `<p class="sub">Escribe cuánto hay de cada cosa. <b>Se guarda solo</b> al pasar al siguiente. Si te equivocas, dale Deshacer.</p>`}
+  return `<h2 class="page">Mi inventario</h2>
+  <p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>
   ${barra()}
-  ${listaConteo(loc)}`;
+  ${html || '<div class="card empty"><b>Sin resultados</b></div>'}`;
 }
 
-function vRepartir(){
-  const bloques = TIENDAS.map(t => {
-    const ns = faltantesTienda(t);
-    if (!ns.length) return `<div class="bloque"><div class="bhead"><b>${LOCS[t].n}</b><span class="mono">al día ✓</span></div>
-      <div class="empty" style="padding:18px">Esta tienda tiene todo 🎉</div></div>`;
-    const filas = ns.map(n => {
-      const hecha = hechasRep[t+n.i.id];
-      if (esMulti(n.i)){
-        return `<div class="linea">
-          <div class="lx"><div class="nm">${esc(n.i.nombre)} 🍓</div>
-            <div class="mt">tiene ${stockCajas(t,n.i.id)} cajas · meta ${n.par} · en bodega ${stockCajas('centro',n.i.id)}</div></div>
-          <div class="cajitas">
-            ${cajasDe(n.i.id).map(p => `<div class="cj"><label>${esc(p.nombre.replace('Caja ',''))}</label>
-              <input class="cant" type="number" inputmode="numeric" id="llc-${t}-${n.i.id}-${p.id}" placeholder="0" onfocus="this.select()"></div>`).join('')}
-            <div class="cj"><label>&nbsp;</label><button class="btn" style="height:48px;padding:0 14px" onclick="llevarCajas('${t}','${n.i.id}')">✓</button></div>
-          </div>
-        </div>`;
-      }
-      const disp = stock('centro', n.i.id);
-      const sug = Math.min(n.falta, esFrac(n.i) ? Math.round(disp*10)/10 : Math.floor(disp));
-      return `<div class="linea">
-        <div class="lx"><div class="nm">${esc(n.i.nombre)}${n.urgente?' <b style="color:var(--fresa)">●</b>':''}</div>
-          <div class="mt">tiene ${fmtCant(n.i,n.s)} · meta ${fmtCant(n.i,n.par)} · en bodega ${fmtCant(n.i,disp)}${disp < n.falta ? ' <b>(no alcanza)</b>' : ''}</div></div>
-        <input class="cant ${hecha?'hecha':''}" type="number" inputmode="${esFrac(n.i)?'decimal':'numeric'}" id="ll-${t}-${n.i.id}"
-          value="${sug>0?fmtCant(n.i,sug):''}" placeholder="0" onfocus="this.select()">
-        <span class="uni">${esc(n.i.unidad)}</span>
-        <button class="btn" style="height:46px;padding:0 13px" onclick="llevar('${t}','${n.i.id}')">${hecha?'↺':'✓'}</button>
+/* — DIRECCIÓN: el Excel vivo — */
+function vExcel(){
+  let html = '', cat = '';
+  for (const i of baseLista()){
+    if (i.categoria !== cat){ cat = i.categoria; html += `<div class="seccion">${esc(cat)}</div>`; }
+    const d = cobertura(i);
+    const chip = d === null ? '<span class="dias gris">sin dato</span>'
+      : d < 7 ? `<span class="dias rojo">${d} días</span>`
+      : d < 15 ? `<span class="dias ambar">${d} días</span>`
+      : `<span class="dias verde">${d} días</span>`;
+    if (esMulti(i)){
+      html += `<div class="xr">
+        <div class="top"><div class="nm">${esc(i.nombre)} 🍓</div>
+          <span class="tot">${posTotal(i.id)} <span class="u">cajas</span></span></div>
+        <div class="xg">${ORDEN_LOCS.map(l => `<div class="c"><label>${LOCS[l].mini}</label>
+          <input value="${stockCajas(l,i.id)} cj" disabled></div>`).join('')}</div>
+        <div class="mt" style="font-size:11px;color:var(--faint);margin-top:6px">La fresa se cuenta por cajas en cada tienda</div>
       </div>`;
-    }).join('');
-    return `<div class="bloque">
-      <div class="bhead"><b>${LOCS[t].n}</b><span class="mono">${ns.length} por llevar</span></div>
-      ${filas}
+      continue;
+    }
+    html += `<div class="xr">
+      <div class="top"><div class="nm">${esc(i.nombre)}</div>
+        ${chip}
+        <span class="tot">${fmtCant(i, posTotal(i.id))} <span class="u">${esc(i.unidad)}</span></span></div>
+      <div class="xg">${ORDEN_LOCS.map(l => `<div class="c"><label>${LOCS[l].mini}</label>
+        <input type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" value="${fmtCant(i, stock(l,i.id))}"
+          onfocus="this.select()" onchange="contar('${l}','${i.id}',this.value)"></div>`).join('')}</div>
+    </div>`;
+  }
+  return `<h2 class="page">Inventario</h2>
+  <p class="sub">Tu tabla de siempre, pero viva: lo que cuentan las tiendas aparece aquí solo. El chip te dice <b>cuántos días te alcanza</b> con el consumo real. Puedes corregir cualquier número.</p>
+  ${barra()}
+  ${html}`;
+}
+
+/* — DIRECCIÓN: me piden — */
+function vPiden(){
+  if (!SOLIC.length) return `<h2 class="page">Me piden</h2>
+    <div class="card empty"><div class="emx">🙌</div><b>Nadie te ha pedido nada</b>Cuando en una tienda le den a 🙋 Pedir, aparece aquí.</div>`;
+  const filas = SOLIC.map(s => {
+    const i = item(s.insumo_id); if (!i) return '';
+    const hrs = Math.round((Date.now() - new Date(s.created_at).getTime())/3600000);
+    return `<div class="linea">
+      <div class="lx"><div class="nm">${esc(i.nombre)}</div>
+        <div class="mt"><b>${LOCS[s.sucursal].short}</b> pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · tienen ${fmtCant(i, stock(s.sucursal, i.id))} ${esc(i.unidad)} · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
+      <button class="okbtn" onclick="resolver(${s.id})">✓ Ya se lo mandé</button>
     </div>`;
   }).join('');
-  return `<h2 class="page">Repartir</h2>
-  <p class="sub">Lo que cada tienda necesita para llegar a su meta, calculado con lo que <b>de verdad venden</b>. Ajusta la cantidad si quieres y dale ✓ cuando lo entregues — el inventario se mueve solo.</p>
-  ${bloques}`;
+  return `<h2 class="page">Me piden</h2>
+  <p class="sub">Lo que las tiendas te avisaron que ya no tienen. Cuando se los lleves, dale ✓ (y corrige los números en Inventario si hace falta).</p>
+  <div class="bloque">${filas}</div>`;
 }
 
-function vComprar(){
-  const ns = faltantesCompra();
-  if (!ns.length) return `<h2 class="page">Comprar</h2>
-    <div class="card empty"><div class="emx">🎉</div><b>No falta nada</b>Tu bodega está en su meta con el consumo real.</div>`;
+/* — DIRECCIÓN: compra del mes — */
+function vCompra(){
+  const ns = compraMes();
+  if (!ns.length) return `<h2 class="page">Compra del mes</h2>
+    <div class="card empty"><div class="emx">🎉</div><b>Estás cubierto</b>Con lo que hay en todo el negocio alcanza para el consumo del mes.</div>`;
   const porProv = {};
   ns.forEach(n => { const p = n.i.proveedor || 'Sin proveedor'; (porProv[p]=porProv[p]||[]).push(n); });
   const bloques = Object.entries(porProv).map(([p, items]) => `
@@ -441,32 +440,21 @@ function vComprar(){
       <div class="bhead"><b>${esc(p)}</b><span class="mono">${items.length} insumos</span></div>
       ${items.map(n => {
         const hecha = hechasCom[n.i.id];
-        if (esMulti(n.i)){
-          return `<div class="linea">
-            <div class="lx"><div class="nm">${esc(n.i.nombre)} 🍓</div>
-              <div class="mt">en bodega ${stockCajas('centro',n.i.id)} cajas · meta ${n.par} · cuando llegue, anota cuántas de cada una</div></div>
-            <div class="cajitas">
-              ${cajasDe(n.i.id).map(pr => `<div class="cj"><label>${esc(pr.nombre.replace('Caja ',''))}</label>
-                <input class="cant" type="number" inputmode="numeric" id="cpc-${n.i.id}-${pr.id}" placeholder="0" onfocus="this.select()"></div>`).join('')}
-              <div class="cj"><label>&nbsp;</label><button class="btn" style="height:48px;padding:0 14px" onclick="llegoCajas('${n.i.id}')">✓</button></div>
-            </div>
-          </div>`;
-        }
         return `<div class="linea">
           <div class="lx"><div class="nm">${esc(n.i.nombre)}</div>
-            <div class="mt">en bodega ${fmtCant(n.i,n.s)} · meta ${fmtCant(n.i,n.par)} · comprar <b>${n.f>1 ? n.packs+' '+esc(n.i.empaque||'paquete')+(n.packs!==1?'s':'') : fmtCant(n.i,n.falta)+' '+esc(n.i.unidad)}</b></div></div>
-          <input class="cant ${hecha?'hecha':''}" type="number" inputmode="${n.f>1?'numeric':(esFrac(n.i)?'decimal':'numeric')}" id="cp-${n.i.id}"
+            <div class="mt">tienes ${fmtCant(n.i,n.pos)} en total · gastas ${fmtCant(n.i,n.c)}/mes${n.dias!==null?` · te alcanza <b>${n.dias} días</b>`:''}</div></div>
+          <input class="cant ${hecha?'hecha':''}" type="number" inputmode="numeric" id="cp-${n.i.id}"
             value="${n.f>1 ? n.packs : fmtCant(n.i,n.falta)}" onfocus="this.select()">
           <span class="uni">${n.f>1 ? esc(n.i.empaque||'paq') : esc(n.i.unidad)}</span>
-          <button class="btn" style="height:46px;padding:0 13px" onclick="llego('${n.i.id}')">${hecha?'↺':'✓'}</button>
+          <button class="okbtn" onclick="llego('${n.i.id}')">${hecha?'↺':'✓ Llegó'}</button>
         </div>`;
       }).join('')}
       <div class="bfoot">
-        <button class="btn ghost" onclick='copiar(textoCompra(${JSON.stringify(p)}, faltantesCompra().filter(n => (n.i.proveedor||"Sin proveedor")===${JSON.stringify(p)})))'>📋 Copiar para WhatsApp</button>
+        <button class="btn ghost" onclick='copiar(textoCompra(${JSON.stringify(p)}, compraMes().filter(n => (n.i.proveedor||"Sin proveedor")===${JSON.stringify(p)})))'>📋 Copiar para WhatsApp</button>
       </div>
     </div>`).join('');
-  return `<h2 class="page">Comprar</h2>
-  <p class="sub">Lo que falta en tu bodega para cubrir el consumo real. <b>Copia</b> la lista al proveedor, y cuando llegue la mercancía, dale ✓ a cada cosa — entra a bodega sola.</p>
+  return `<h2 class="page">Compra del mes</h2>
+  <p class="sub">Lo que falta para cubrir <b>un mes de consumo real</b> con lo que hay en todo el negocio. Copia la lista a cada proveedor; cuando llegue, dale <b>✓ Llegó</b> y entra a tu bodega solo.</p>
   ${bloques}`;
 }
 
@@ -475,30 +463,26 @@ function irTab(k){ tab=k; q=''; window.scrollTo(0,0); render(); }
 function render(){
   document.getElementById('ctx').textContent = `${quien()} · ${LOCS[sesion.sucursal].short}`;
   if (!isDir()){
-    document.getElementById('nav').innerHTML = '';
-    document.getElementById('nav').style.display = 'none';
-    document.body.style.paddingBottom = '30px';
-    document.getElementById('app').innerHTML = vContar();
+    document.getElementById('nav').style.display='none';
+    document.body.style.paddingBottom='30px';
+    document.getElementById('app').innerHTML = vTienda();
     return;
   }
-  const nRep = TIENDAS.reduce((a,t) => a + faltantesTienda(t).length, 0);
-  const nCom = faltantesCompra().length;
-  const tabs = [['rep','Repartir','🚚',nRep], ['com','Comprar','🛒',nCom], ['inv','Inventario','📦',0]];
-  const views = {rep:vRepartir, com:vComprar, inv:vContar};
-  if (!views[tab]) tab='rep';
+  const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.length], ['com','Compra del mes','🛒',0]];
+  const views = {inv:vExcel, pid:vPiden, com:vCompra};
+  if (!views[tab]) tab='inv';
+  document.getElementById('nav').style.display='';
   document.getElementById('nav').innerHTML = tabs.map(([k,n,ic,p]) =>
     `<button class="${tab===k?'on':''}" onclick="irTab('${k}')"><span class="tic">${ic}</span>${n}${p?`<span class="pip">${p}</span>`:''}</button>`).join('');
   document.getElementById('app').innerHTML = views[tab]();
 }
 
-/* ===== Arranque ===== */
 (async () => {
   try{
     const s = localStorage.getItem('lfs_sesion');
-    if (s){ sesion = JSON.parse(s); who = isDir() ? 'centro' : sesion.sucursal; tab = isDir() ? 'rep' : 'contar'; await arrancar(); }
+    if (s){ sesion = JSON.parse(s); tab='inv'; await arrancar(); }
   }catch(e){}
 })();
-/* Refrescar al volver a la app (sin pisar lo que estés escribiendo) */
 document.addEventListener('visibilitychange', async () => {
   if (!document.hidden && sesion && document.activeElement?.tagName !== 'INPUT'){ await cargar(); render(); }
 });
