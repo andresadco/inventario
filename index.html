@@ -141,7 +141,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v8</b></div>
+    <div class="sublog">Control de inventarios · <b>v9</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -603,9 +603,21 @@ function vTienda(){
         : `<div class="fcol"><label>&nbsp;</label><button class="pedirbtn" onclick="abrirPedir('${i.id}')">🙋 Pedir</button></div>`}
     </div>`;
   }
+  const nCamino = SOLIC.filter(x => x.sucursal === loc && solCamino(x)).length;
+  const aviso = nCamino ? `<button class="btn ghost wide" style="margin-bottom:10px;border-color:var(--leaf);color:var(--leaf)" onclick="irTab('mis')">🚚 Tienes ${nCamino} ${nCamino===1?'pedido':'pedidos'} en camino — tócale para verlos</button>` : '';
+  return `<h2 class="page">Mi inventario</h2>
+  <p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>
+  ${aviso}
+  ${barra()}
+  ${html || '<div class="card empty"><b>Sin resultados</b></div>'}`;
+}
+
+/* — TIENDA: mis pedidos (pendientes, en camino, historial del mes) — */
+function bloqueCamino(loc){
   const camino = SOLIC.filter(x => x.sucursal === loc && solCamino(x));
-  const bloqueCamino = camino.length ? `<div class="bloque" style="margin-top:4px">
-    <div class="bhead"><b>🚚 Viene en camino</b><span class="mono">tócale ✓ cuando llegue</span></div>
+  if (!camino.length) return '';
+  return `<div class="bloque">
+    <div class="bhead" style="background:var(--leaf)"><b>🚚 Viene en camino</b><span class="mono">tócale ✓ cuando llegue</span></div>
     ${camino.map(x => { const ii = item(x.insumo_id); if(!ii) return '';
       return `<div class="linea">
         <div class="lx"><div class="nm">${esc(ii.nombre)}</div>
@@ -613,12 +625,27 @@ function vTienda(){
         <input class="cant" type="number" inputmode="${esFrac(ii)?'decimal':'numeric'}" id="rc-${x.id}" value="${x.enviada_cant ? fmtCant(ii,x.enviada_cant) : ''}" onfocus="this.select()">
         <button class="okbtn" onclick="recibirSolic(${x.id}, true)">✓ Llegó</button>
       </div>`; }).join('')}
+  </div>`;
+}
+function vMisPedidos(){
+  const loc = sesion.sucursal;
+  const pend = SOLIC.filter(x => x.sucursal === loc && solPend(x));
+  const bloquePend = pend.length ? `<div class="bloque">
+    <div class="bhead"><b>🙋 Esperando a Andrés</b><span class="mono">${pend.length}</span></div>
+    ${pend.map(x => { const ii = item(x.insumo_id); if(!ii) return '';
+      const hrs = Math.round((Date.now() - new Date(x.created_at).getTime())/3600000);
+      return `<div class="linea">
+        <div class="lx"><div class="nm">${esc(ii.nombre)}</div>
+          <div class="mt">pediste <b>${x.cantidad ? fmtCant(ii,x.cantidad)+' '+esc(ii.unidad) : '—'}</b> · hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
+        <button class="okbtn" style="background:#F3E9EC;color:var(--muted)" onclick="quitarPedir(${x.id})">✕</button>
+      </div>`; }).join('')}
   </div>` : '';
-  return `<h2 class="page">Mi inventario</h2>
-  <p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>
-  ${bloqueCamino}
-  ${barra()}
-  ${html || '<div class="card empty"><b>Sin resultados</b></div>'}
+  const nada = !pend.length && !SOLIC.some(x => x.sucursal === loc && solCamino(x)) && !SOLIC.some(x => x.sucursal === loc && String(x.created_at).slice(0,7) === hoy().slice(0,7));
+  return `<h2 class="page">Mis pedidos</h2>
+  <p class="sub">Aquí vive todo lo que has pedido: lo que espera, lo que viene en camino (confírmalo al llegar) y tu historial del mes.</p>
+  ${nada ? '<div class="card empty"><div class="emx">🙋</div><b>Todavía no pides nada</b>Desde tu inventario, dale 🙋 Pedir a lo que te falte.</div>' : ''}
+  ${bloqueCamino(loc)}
+  ${bloquePend}
   ${cuadroMes(loc)}`;
 }
 
@@ -854,9 +881,14 @@ function irTab(k){ tab=k; q=''; window.scrollTo(0,0); render(); }
 function render(){
   document.getElementById('ctx').textContent = `${quien()} · ${LOCS[sesion.sucursal].short}`;
   if (!isDir()){
-    document.getElementById('nav').style.display='none';
-    document.body.style.paddingBottom='30px';
-    document.getElementById('app').innerHTML = avisosBar() + vTienda();
+    const nCam = SOLIC.filter(x => x.sucursal === sesion.sucursal && solCamino(x)).length;
+    const tabsT = [['contar','Contar','📦',0], ['mis','Mis pedidos','🙋',nCam]];
+    const viewsT = {contar:vTienda, mis:vMisPedidos};
+    if (!viewsT[tab]) tab = 'contar';
+    document.getElementById('nav').style.display='';
+    document.getElementById('nav').innerHTML = tabsT.map(([k,n,ic,p]) =>
+      `<button class="${tab===k?'on':''}" onclick="irTab('${k}')"><span class="tic">${ic}</span>${n}${p?`<span class="pip">${p}</span>`:''}</button>`).join('');
+    document.getElementById('app').innerHTML = avisosBar() + viewsT[tab]();
     return;
   }
   const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.filter(solPend).length], ['com','Compra','🛒',0], ['aj','Ajustes','⚙️',0]];
