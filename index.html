@@ -137,7 +137,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v6</b></div>
+    <div class="sublog">Control de inventarios · <b>v7</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -417,6 +417,45 @@ async function borrarAcceso(aid, nombre){
   toast('Acceso eliminado');
   await cargar(); render();
 }
+/* Exportar solicitudes del mes a Excel (CSV) */
+function descargar(nombre, contenido){
+  const blob = new Blob(['\uFEFF' + contenido], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = nombre + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+async function exportarSolic(offset){
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (offset||0));
+  const ini = d.toISOString().slice(0,10);
+  const f = new Date(d); f.setMonth(f.getMonth()+1);
+  const fin = f.toISOString().slice(0,10);
+  const { data, error } = await db.from('lfi_solicitudes').select('*')
+    .gte('created_at', ini).lt('created_at', fin).order('created_at');
+  if (error){ toast('No se pudo exportar.'); return; }
+  if (!data || !data.length){ toast('No hay pedidos en ese mes.'); return; }
+  const esc2 = x => '"' + String(x ?? '').replace(/"/g,'""') + '"';
+  const filas = [['Fecha','Tienda','Insumo','Unidad','Pidió','Cant. pedida','Enviada','Envió','Recibida','Recibió','Fecha recibido','Estado'].join(',')];
+  data.forEach(x => {
+    const i = item(x.insumo_id);
+    const est = x.recibida_at ? 'Recibido' : x.enviada_at ? 'En camino' : 'Pendiente';
+    filas.push([
+      String(x.created_at).slice(0,10),
+      LOCS[x.sucursal] ? LOCS[x.sucursal].short : x.sucursal,
+      esc2(i ? i.nombre : x.insumo_id),
+      esc2(i ? i.unidad : ''),
+      esc2(x.por),
+      x.cantidad ?? '',
+      x.enviada_cant ?? '',
+      esc2(x.enviada_por),
+      x.recibida_cant ?? (x.recibida_at ? (x.enviada_cant ?? '') : ''),
+      esc2(x.recibida_por),
+      x.recibida_at ? String(x.recibida_at).slice(0,10) : '',
+      est,
+    ].join(','));
+  });
+  descargar('pedidos_' + ini.slice(0,7), filas.join('\n'));
+  toast('⬇︎ Exportado. Ábrelo en Excel.');
+}
 function copiar(txt){ navigator.clipboard?.writeText(txt).then(()=>toast('Copiado. Pégalo en WhatsApp.')).catch(()=>toast('No se pudo copiar.')); }
 
 /* ===== Compra del mes ===== */
@@ -576,7 +615,7 @@ function vPiden(){
   const pend = SOLIC.filter(solPend);
   const camino = SOLIC.filter(solCamino);
   const cerradas = SOLIC.filter(x => x.recibida_at).slice(0, 8);
-  if (!pend.length && !camino.length && !cerradas.length) return `<h2 class="page">Me piden</h2>
+  if (!pend.length && !camino.length && !cerradas.length && !SOLIC.length) return `<h2 class="page">Me piden</h2>
     <div class="card empty"><div class="emx">🙌</div><b>Nadie te ha pedido nada</b>Cuando en una tienda le den a 🙋 Pedir, aparece aquí.</div>`;
 
   const filaPend = s => {
@@ -618,7 +657,40 @@ function vPiden(){
   <p class="sub">Al dar <b>✓ Ya se lo mandé</b> pones cuánto mandas: sale de tu bodega, entra a la tienda y queda registrado. La tienda confirma cuando le llegue.</p>
   ${pend.length ? `<div class="bloque"><div class="bhead"><b>🙋 Pendientes</b><span class="mono">${pend.length}</span></div>${pend.map(filaPend).join('')}</div>` : ''}
   ${camino.length ? `<div class="bloque"><div class="bhead" style="background:var(--leaf)"><b>🚚 En camino</b><span class="mono">${camino.length}</span></div>${camino.map(filaCamino).join('')}</div>` : ''}
-  ${cerradas.length ? `<div class="bloque"><div class="bhead" style="background:#8A7178"><b>✓ Recibidos</b><span class="mono">últimos ${cerradas.length}</span></div>${cerradas.map(filaCerrada).join('')}</div>` : ''}`;
+  ${cerradas.length ? `<div class="bloque"><div class="bhead" style="background:#8A7178"><b>✓ Recibidos</b><span class="mono">últimos ${cerradas.length}</span></div>${cerradas.map(filaCerrada).join('')}</div>` : ''}
+  ${resumenMes()}`;
+}
+
+/* Resumen de control del mes: todas las tiendas, con exportación */
+function resumenMes(){
+  const mes = hoy().slice(0,7);
+  const del = SOLIC.filter(x => String(x.created_at).slice(0,7) === mes);
+  const porSuc = {};
+  del.forEach(x => { (porSuc[x.sucursal]=porSuc[x.sucursal]||[]).push(x); });
+  const cuerpo = Object.keys(porSuc).map(su => {
+    const xs = porSuc[su];
+    const rec = xs.filter(x => x.recibida_at).length;
+    return `<div class="seccion" style="padding:0 14px">${esc(LOCS[su] ? LOCS[su].short : su)} · ${xs.length} pedidos · ${rec} recibidos</div>
+    ${xs.map(x => {
+      const i = item(x.insumo_id); if (!i) return '';
+      const est = x.recibida_at
+        ? `<b style="color:var(--leaf)">recibió ${x.recibida_cant!=null ? fmtCant(i,x.recibida_cant) : (x.enviada_cant!=null ? fmtCant(i,x.enviada_cant) : '✓')}</b>${x.recibida_cant!=null && x.enviada_cant!=null && Number(x.recibida_cant)!==Number(x.enviada_cant) ? ` <span style="color:var(--amber)">(enviaste ${fmtCant(i,x.enviada_cant)})</span>` : ''}`
+        : x.enviada_at ? '<b style="color:var(--leaf)">🚚 en camino</b>'
+        : '<b style="color:var(--fresa)">pendiente</b>';
+      return `<div class="linea">
+        <div class="lx"><div class="nm">${esc(i.nombre)}</div>
+          <div class="mt">${String(x.created_at).slice(5,10).split('-').reverse().join('/')} · pidió ${x.por ? esc(x.por) : '—'} ${x.cantidad!=null ? fmtCant(i,x.cantidad)+' '+esc(i.unidad) : ''} · ${est}</div></div>
+      </div>`;
+    }).join('')}`;
+  }).join('');
+  return `<div class="bloque" style="margin-top:6px">
+    <div class="bhead"><b>📊 Control del mes</b><span class="mono">${del.length} pedidos</span></div>
+    ${cuerpo || '<div class="empty" style="padding:18px">Sin pedidos este mes todavía.</div>'}
+    <div class="bfoot">
+      <button class="btn ghost" onclick="exportarSolic(0)">⬇︎ Exportar este mes</button>
+      <button class="btn ghost" onclick="exportarSolic(1)">⬇︎ Mes anterior</button>
+    </div>
+  </div>`;
 }
 
 /* — DIRECCIÓN: compra del mes — */
