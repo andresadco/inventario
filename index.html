@@ -69,6 +69,8 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .cant.cero{color:var(--faint)}
 .pedirbtn{flex:none;font-size:11px;font-weight:800;border:1px solid var(--line2);border-radius:11px;padding:8px 10px;color:var(--muted);min-height:52px}
 .pedirbtn.on{background:var(--fresa);border-color:var(--fresa);color:#fff}
+.fcol{flex:none;text-align:center}
+.fcol > label{display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:3px}
 .cajitas{display:flex;gap:8px;flex:none}
 .cajitas .cj{text-align:center}
 .cajitas label{display:block;font-size:9px;font-weight:800;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
@@ -112,6 +114,8 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .bfoot .btn{flex:1}
 .okbtn{flex:none;height:46px;padding:0 13px;background:var(--fresa);color:#fff;border-radius:12px;font-weight:800}
 
+.expbar2{display:flex;gap:8px;margin:2px 0 12px}
+.expbar2 .btn{flex:1}
 .fbody{padding:14px}
 .fbody input[type=text],.fbody input[type=number],.fbody select{width:100%;padding:12px;border:1px solid var(--line2);border-radius:11px;background:#fff;margin-bottom:10px}
 .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
@@ -137,7 +141,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v7</b></div>
+    <div class="sublog">Control de inventarios · <b>v8</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -379,6 +383,71 @@ async function llego(id){
   toast(`✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a bodega`);
   await cargar(); render();
 }
+/* Entrada directa de mercancía y transferencias entre ubicaciones */
+let formInv = null;   // 'ent' | 'tra' | null
+function insumoPorNombre(n){
+  const t = (n||'').trim().toLowerCase();
+  return CAT.find(i => !esMulti(i) && i.nombre.toLowerCase() === t);
+}
+async function registrarEntrada(){
+  const i = insumoPorNombre(document.getElementById('en-ins')?.value);
+  if (!i){ toast('Elige un insumo de la lista.'); return; }
+  const v = limpia(i, document.getElementById('en-cant')?.value);
+  if (v <= 0){ toast('Pon la cantidad que entra.'); return; }
+  const loc = document.getElementById('en-loc').value;
+  const nota = (document.getElementById('en-nota')?.value || '').trim();
+  const { error } = await db.rpc('lfi_mover', {p_suc:loc, p_insumo:i.id, p_delta:v, p_tipo:'entrada', p_nota:'Entrada de mercancía' + (nota ? ' · ' + nota : ''), p_por:quien()});
+  if (error){ toast('No se pudo registrar.'); return; }
+  formInv = null;
+  toast(`✓ Entraron ${fmtCant(i,v)} ${i.unidad} de ${i.nombre} a ${LOCS[loc].short}`);
+  await cargar(); render();
+}
+async function transferirMerc(){
+  const i = insumoPorNombre(document.getElementById('tr-ins')?.value);
+  if (!i){ toast('Elige un insumo de la lista.'); return; }
+  const de = document.getElementById('tr-de').value, a = document.getElementById('tr-a').value;
+  if (de === a){ toast('El origen y el destino son el mismo.'); return; }
+  const v = limpia(i, document.getElementById('tr-cant')?.value);
+  if (v <= 0){ toast('Pon la cantidad a transferir.'); return; }
+  const disp = stock(de, i.id);
+  const r1 = await db.rpc('lfi_mover', {p_suc:de, p_insumo:i.id, p_delta:-v, p_tipo:'salida', p_nota:'Transferencia a ' + LOCS[a].short, p_por:quien()});
+  if (r1.error){ toast('No se pudo transferir.'); return; }
+  await db.rpc('lfi_mover', {p_suc:a, p_insumo:i.id, p_delta:v, p_tipo:'entrada', p_nota:'Transferencia de ' + LOCS[de].short, p_por:quien()});
+  formInv = null;
+  toast(disp < v ? `✓ Transferido (ojo: en ${LOCS[de].short} solo había ${fmtCant(i,disp)})` : `✓ ${fmtCant(i,v)} ${i.unidad} de ${LOCS[de].short} → ${LOCS[a].short}`);
+  await cargar(); render();
+}
+function formsInventario(){
+  const dl = `<datalist id="dl-ins">${CAT.filter(i => !esMulti(i)).map(i => `<option value="${esc(i.nombre)}">`).join('')}</datalist>`;
+  const botones = `<div class="expbar2">
+    <button class="btn ${formInv==='ent'?'':'ghost'}" onclick="formInv = formInv==='ent' ? null : 'ent'; render()">📥 Entrada</button>
+    <button class="btn ${formInv==='tra'?'':'ghost'}" onclick="formInv = formInv==='tra' ? null : 'tra'; render()">🔄 Transferir</button>
+  </div>`;
+  if (formInv === 'ent') return botones + dl + `<div class="bloque"><div class="fbody">
+    <label class="flbl">¿Qué llegó?</label>
+    <input type="text" id="en-ins" list="dl-ins" placeholder="Escribe el insumo…">
+    <div class="fgrid">
+      <div><label class="flbl">Cantidad</label><input type="number" inputmode="decimal" id="en-cant" placeholder="0"></div>
+      <div><label class="flbl">¿A dónde entra?</label><select id="en-loc">${Object.keys(LOCS).map(l => `<option value="${l}" ${l==='centro'?'selected':''}>${LOCS[l].n}</option>`).join('')}</select></div>
+    </div>
+    <label class="flbl">Nota (proveedor, motivo…)</label>
+    <input type="text" id="en-nota" placeholder="opcional">
+    <button class="btn wide" onclick="registrarEntrada()">✓ Registrar entrada</button>
+  </div></div>`;
+  if (formInv === 'tra') return botones + dl + `<div class="bloque"><div class="fbody">
+    <label class="flbl">¿Qué se mueve?</label>
+    <input type="text" id="tr-ins" list="dl-ins" placeholder="Escribe el insumo…">
+    <div class="fgrid">
+      <div><label class="flbl">De</label><select id="tr-de">${Object.keys(LOCS).map(l => `<option value="${l}" ${l==='centro'?'selected':''}>${LOCS[l].short}</option>`).join('')}</select></div>
+      <div><label class="flbl">A</label><select id="tr-a">${Object.keys(LOCS).map(l => `<option value="${l}" ${l==='moctezuma'?'selected':''}>${LOCS[l].short}</option>`).join('')}</select></div>
+    </div>
+    <label class="flbl">Cantidad</label>
+    <input type="number" inputmode="decimal" id="tr-cant" placeholder="0">
+    <button class="btn wide" onclick="transferirMerc()">✓ Transferir</button>
+  </div></div>`;
+  return botones + dl;
+}
+
 /* Ajustes: alta de insumos y equipo */
 async function crearInsumo(){
   const v = id => (document.getElementById(id)?.value || '').trim();
@@ -521,17 +590,17 @@ function vTienda(){
     const s = stock(loc, i.id);
     html += `<div class="fila">
       <div class="fx"><div class="nm">${esc(i.nombre)}</div><div class="mt">${esc(i.unidad)}</div></div>
-      <input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
-        value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)">
+      <div class="fcol"><label>Tienes</label><input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
+        value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)"></div>
       ${sol && solCamino(sol)
-        ? `<button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="recibirSolic(${sol.id}, false)">🚚 ✓ Llegó</button>`
+        ? `<div class="fcol"><label>Pedido</label><button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="recibirSolic(${sol.id}, false)">🚚 ✓ Llegó</button></div>`
         : sol
-        ? `<button class="pedirbtn on" onclick="quitarPedir(${sol.id})">🙋 ${sol.cantidad ? fmtCant(i,sol.cantidad)+' '+esc(i.unidad) : 'Pedido'}</button>`
+        ? `<div class="fcol"><label>Pediste</label><button class="pedirbtn on" onclick="quitarPedir(${sol.id})">🙋 ${sol.cantidad ? fmtCant(i,sol.cantidad)+' '+esc(i.unidad) : 'Pedido'}</button></div>`
         : pidiendo === i.id
-        ? `<input class="cant" style="width:70px" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" id="pd-${i.id}" placeholder="¿cuánto?"
-             onkeydown="if(event.key==='Enter')confirmarPedir('${loc}','${i.id}')">
-           <button class="okbtn" onclick="confirmarPedir('${loc}','${i.id}')">✓</button>`
-        : `<button class="pedirbtn" onclick="abrirPedir('${i.id}')">🙋 Pedir</button>`}
+        ? `<div class="fcol"><label>Pedir</label><input class="cant" style="width:70px" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" id="pd-${i.id}" placeholder="¿cuánto?"
+             onkeydown="if(event.key==='Enter')confirmarPedir('${loc}','${i.id}')"></div>
+           <div class="fcol"><label>&nbsp;</label><button class="okbtn" onclick="confirmarPedir('${loc}','${i.id}')">✓</button></div>`
+        : `<div class="fcol"><label>&nbsp;</label><button class="pedirbtn" onclick="abrirPedir('${i.id}')">🙋 Pedir</button></div>`}
     </div>`;
   }
   const camino = SOLIC.filter(x => x.sucursal === loc && solCamino(x));
@@ -606,6 +675,7 @@ function vExcel(){
   }
   return `<h2 class="page">Inventario</h2>
   <p class="sub">Tu tabla de siempre, pero viva: lo que cuentan las tiendas aparece aquí solo. El chip te dice <b>cuántos días te alcanza</b> con el consumo real. Puedes corregir cualquier número.</p>
+  ${formsInventario()}
   ${barra()}
   ${html}`;
 }
