@@ -112,6 +112,12 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .bfoot .btn{flex:1}
 .okbtn{flex:none;height:46px;padding:0 13px;background:var(--fresa);color:#fff;border-radius:12px;font-weight:800}
 
+.fbody{padding:14px}
+.fbody input[type=text],.fbody input[type=number],.fbody select{width:100%;padding:12px;border:1px solid var(--line2);border-radius:11px;background:#fff;margin-bottom:10px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.flbl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;color:var(--muted);margin-bottom:5px}
+.chk2{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;color:var(--muted);margin:2px 0 12px}
+.chk2 input{width:20px;height:20px;accent-color:var(--fresa)}
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:45;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;padding-bottom:var(--safe-b);box-shadow:0 -6px 24px -14px rgba(43,26,31,.28)}
 .tabbar button{flex:1;padding:10px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--faint);position:relative;min-height:62px;justify-content:center}
 .tabbar .tic{font-size:21px;line-height:1;filter:grayscale(1) opacity(.55)}
@@ -131,7 +137,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v5</b></div>
+    <div class="sublog">Control de inventarios · <b>v6</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -212,7 +218,7 @@ const ORDEN_LOCS = ['moctezuma','narvarte','balbuena','centro'];
 const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hoy = () => new Date().toISOString().slice(0,10);
 
-let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[];
+let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[], EQUIPO=[];
 let sesion=null, tab='inv', q='', fcat='', soloVenta=true, hechasCom={}, pidiendo=null, enviando=null;
 const solActiva = s => !s.recibida_at;                      // pendiente o en camino
 const solPend   = s => !s.enviada_at && !s.recibida_at;     // aún no se la mandan
@@ -239,11 +245,12 @@ function cobertura(i){
 }
 
 async function cargar(){
-  const [ins, stk, prs, sol] = await Promise.all([
+  const [ins, stk, prs, sol, acc] = await Promise.all([
     db.from('lfi_insumos').select('*').eq('activo', true).order('categoria').order('nombre'),
     db.from('lfi_stock').select('*'),
     db.from('lfi_presentaciones').select('*').order('orden'),
     db.from('lfi_solicitudes').select('*').order('created_at', {ascending:false}).limit(120),
+    db.from('lfi_accesos').select('*').order('sucursal').order('nombre'),
   ]);
   CAT = ins.data || [];
   INV = {}; INVD = {}; PRES = {};
@@ -251,6 +258,7 @@ async function cargar(){
   (stk.data||[]).forEach(s => { if(INV[s.sucursal]){ INV[s.sucursal][s.insumo_id]=Number(s.cantidad); if(s.desglose) INVD[s.sucursal][s.insumo_id]=s.desglose; } });
   (prs.data||[]).forEach(p => { (PRES[p.insumo_id]=PRES[p.insumo_id]||[]).push(p); });
   SOLIC = sol.data || [];
+  EQUIPO = acc.data || [];
 }
 
 /* ===== Sesión ===== */
@@ -338,10 +346,24 @@ async function enviarSolic(sid){
   toast(disp < v ? `✓ Enviado (ojo: en bodega solo había ${fmtCant(i,disp)})` : `✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a ${LOCS[s.sucursal].short}`);
   await cargar(); render();
 }
-/* Tienda: confirmar que llegó */
-async function recibirSolic(sid){
-  await db.from('lfi_solicitudes').update({recibida_at:new Date().toISOString(), recibida_por:quien()}).eq('id', sid);
-  toast('✓ Marcado como recibido');
+/* Tienda: confirmar que llegó (con cantidad editable si llegó distinto) */
+async function recibirSolic(sid, conCampo){
+  const so = SOLIC.find(x => x.id === sid); if (!so) return;
+  const i = item(so.insumo_id);
+  const env = Number(so.enviada_cant) || 0;
+  let v = env;
+  if (conCampo){
+    const el = document.getElementById('rc-'+sid);
+    v = limpia(i, el ? el.value : env);
+    if (v <= 0){ toast('Pon cuánto llegó de verdad.'); return; }
+  }
+  const delta = Math.round((v - env)*1000)/1000;
+  if (delta !== 0){
+    const { error } = await db.rpc('lfi_mover', {p_suc:so.sucursal, p_insumo:so.insumo_id, p_delta:delta, p_tipo:'ajuste', p_nota:'Ajuste al recibir pedido (llegó '+fmtCant(i,v)+' de '+fmtCant(i,env)+')', p_por:quien()});
+    if (error){ toast('No se pudo ajustar.'); return; }
+  }
+  await db.from('lfi_solicitudes').update({recibida_at:new Date().toISOString(), recibida_por:quien(), recibida_cant:v}).eq('id', sid);
+  toast(delta === 0 ? '✓ Recibido completo' : `✓ Recibido: ${fmtCant(i,v)} (se ajustó tu inventario)`);
   await cargar(); render();
 }
 /* Compra del mes: llegó → entra a bodega */
@@ -355,6 +377,44 @@ async function llego(id){
   if (error){ toast('No se pudo registrar.'); return; }
   hechasCom[id] = true;
   toast(`✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a bodega`);
+  await cargar(); render();
+}
+/* Ajustes: alta de insumos y equipo */
+async function crearInsumo(){
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const nombre = v('ni-nombre');
+  if (!nombre){ toast('Ponle nombre al insumo.'); return; }
+  if (CAT.some(i => i.nombre.toLowerCase() === nombre.toLowerCase())){ toast('Ya existe un insumo con ese nombre.'); return; }
+  const factor = Math.max(1, Number(v('ni-factor'))||1);
+  const { error } = await db.from('lfi_insumos').insert({
+    nombre,
+    categoria: v('ni-cat') || 'General',
+    unidad: v('ni-uni') || 'pza',
+    fraccion: document.getElementById('ni-frac').checked,
+    proveedor: v('ni-prov') || null,
+    empaque: factor > 1 ? (v('ni-emp') || 'paquete') : null,
+    factor,
+    consumo_mes: Number(v('ni-cons')) || null,
+    costo: 0, granel: false, diario: false, multi: false, par_com: 0, min_com: 0, activo: true,
+  });
+  if (error){ toast('No se pudo crear: ' + error.message); return; }
+  toast('✓ Insumo creado: ' + nombre);
+  await cargar(); render();
+}
+async function crearAcceso(){
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const suc = v('eq-suc'), nombre = v('eq-nombre'), pin = v('eq-pin');
+  if (!nombre){ toast('Ponle nombre a la persona.'); return; }
+  if (!/^\d{4}$/.test(pin)){ toast('El PIN debe ser de 4 números.'); return; }
+  const { error } = await db.from('lfi_accesos').insert({sucursal:suc, pin, nombre, rol: suc === 'centro' ? 'direccion' : 'tienda'});
+  if (error){ toast(error.message.includes('duplicate') ? 'Ese PIN ya existe en esa sucursal, usa otro.' : 'No se pudo crear.'); return; }
+  toast(`✓ ${nombre} creado. Pásale su PIN por privado.`);
+  await cargar(); render();
+}
+async function borrarAcceso(aid, nombre){
+  if (!confirm(`¿Quitar el acceso de ${nombre}?`)) return;
+  await db.from('lfi_accesos').delete().eq('id', aid);
+  toast('Acceso eliminado');
   await cargar(); render();
 }
 function copiar(txt){ navigator.clipboard?.writeText(txt).then(()=>toast('Copiado. Pégalo en WhatsApp.')).catch(()=>toast('No se pudo copiar.')); }
@@ -425,7 +485,7 @@ function vTienda(){
       <input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
         value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)">
       ${sol && solCamino(sol)
-        ? `<button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="recibirSolic(${sol.id})">🚚 ✓ Llegó</button>`
+        ? `<button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="recibirSolic(${sol.id}, false)">🚚 ✓ Llegó</button>`
         : sol
         ? `<button class="pedirbtn on" onclick="quitarPedir(${sol.id})">🙋 ${sol.cantidad ? fmtCant(i,sol.cantidad)+' '+esc(i.unidad) : 'Pedido'}</button>`
         : pidiendo === i.id
@@ -441,15 +501,39 @@ function vTienda(){
     ${camino.map(x => { const ii = item(x.insumo_id); if(!ii) return '';
       return `<div class="linea">
         <div class="lx"><div class="nm">${esc(ii.nombre)}</div>
-          <div class="mt">te mandaron <b>${x.enviada_cant ? fmtCant(ii,x.enviada_cant)+' '+esc(ii.unidad) : 'tu pedido'}</b>${x.enviada_por ? ' · '+esc(x.enviada_por) : ''}</div></div>
-        <button class="okbtn" onclick="recibirSolic(${x.id})">✓ Llegó</button>
+          <div class="mt">te mandaron <b>${x.enviada_cant ? fmtCant(ii,x.enviada_cant)+' '+esc(ii.unidad) : 'tu pedido'}</b>${x.enviada_por ? ' · '+esc(x.enviada_por) : ''} · si llegó distinto, corrige el número</div></div>
+        <input class="cant" type="number" inputmode="${esFrac(ii)?'decimal':'numeric'}" id="rc-${x.id}" value="${x.enviada_cant ? fmtCant(ii,x.enviada_cant) : ''}" onfocus="this.select()">
+        <button class="okbtn" onclick="recibirSolic(${x.id}, true)">✓ Llegó</button>
       </div>`; }).join('')}
   </div>` : '';
   return `<h2 class="page">Mi inventario</h2>
   <p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>
   ${bloqueCamino}
   ${barra()}
-  ${html || '<div class="card empty"><b>Sin resultados</b></div>'}`;
+  ${html || '<div class="card empty"><b>Sin resultados</b></div>'}
+  ${cuadroMes(loc)}`;
+}
+
+/* Historial del mes: qué pidió esta tienda y qué recibió */
+function cuadroMes(loc){
+  const mes = hoy().slice(0,7);
+  const del = SOLIC.filter(x => x.sucursal === loc && String(x.created_at).slice(0,7) === mes);
+  if (!del.length) return '';
+  const filas = del.map(x => {
+    const i = item(x.insumo_id); if (!i) return '';
+    const est = x.recibida_at
+      ? `<b style="color:var(--leaf)">recibiste ${x.recibida_cant!=null ? fmtCant(i,x.recibida_cant) : (x.enviada_cant!=null ? fmtCant(i,x.enviada_cant) : '✓')}</b>${x.recibida_cant!=null && x.enviada_cant!=null && Number(x.recibida_cant)!==Number(x.enviada_cant) ? ` <span style="color:var(--amber)">(mandaron ${fmtCant(i,x.enviada_cant)})</span>` : ''}`
+      : x.enviada_at ? '<b style="color:var(--leaf)">🚚 en camino</b>'
+      : '<b style="color:var(--fresa)">pendiente</b>';
+    return `<div class="linea">
+      <div class="lx"><div class="nm">${esc(i.nombre)}</div>
+        <div class="mt">${String(x.created_at).slice(5,10).split('-').reverse().join('/')} · pediste ${x.cantidad!=null ? fmtCant(i,x.cantidad)+' '+esc(i.unidad) : '—'} · ${est}</div></div>
+    </div>`;
+  }).join('');
+  return `<div class="bloque" style="margin-top:20px">
+    <div class="bhead"><b>📋 Tus pedidos del mes</b><span class="mono">${del.length}</span></div>
+    ${filas}
+  </div>`;
 }
 
 /* — DIRECCIÓN: el Excel vivo — */
@@ -567,6 +651,62 @@ function vCompra(){
   ${bloques}`;
 }
 
+/* — DIRECCIÓN: ajustes (insumos y equipo) — */
+function vAjustes(){
+  const catsExist = cats();
+  const provs = [...new Set(CAT.map(i => i.proveedor).filter(Boolean))];
+  const porSuc = {};
+  EQUIPO.forEach(a => { (porSuc[a.sucursal]=porSuc[a.sucursal]||[]).push(a); });
+  return `<h2 class="page">Ajustes</h2>
+  <p class="sub">Da de alta insumos nuevos y crea el acceso de cada persona con su nombre — así sabes exactamente quién pide, quién recibe y quién cuenta.</p>
+
+  <div class="bloque">
+    <div class="bhead"><b>➕ Nuevo insumo</b></div>
+    <div class="fbody">
+      <label class="flbl">Nombre</label>
+      <input type="text" id="ni-nombre" placeholder="Ej. Salsa de fresa">
+      <div class="fgrid">
+        <div><label class="flbl">Categoría</label>
+          <input type="text" id="ni-cat" list="dl-cats" placeholder="Comestibles"><datalist id="dl-cats">${catsExist.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+        <div><label class="flbl">Unidad (como se cuenta)</label>
+          <input type="text" id="ni-uni" placeholder="kg, pza, botella…"></div>
+        <div><label class="flbl">Proveedor</label>
+          <input type="text" id="ni-prov" list="dl-provs" placeholder="opcional"><datalist id="dl-provs">${provs.map(p=>`<option value="${esc(p)}">`).join('')}</datalist></div>
+        <div><label class="flbl">Consumo al mes</label>
+          <input type="number" inputmode="decimal" id="ni-cons" placeholder="opcional"></div>
+        <div><label class="flbl">Empaque de compra</label>
+          <input type="text" id="ni-emp" placeholder="caja, paquete…"></div>
+        <div><label class="flbl">Piezas por empaque</label>
+          <input type="number" inputmode="numeric" id="ni-factor" placeholder="1"></div>
+      </div>
+      <label class="chk2"><input type="checkbox" id="ni-frac"> Se cuenta con decimales (se pesa: kg, litros)</label>
+      <button class="btn wide" onclick="crearInsumo()">Crear insumo</button>
+    </div>
+  </div>
+
+  <div class="bloque">
+    <div class="bhead"><b>👥 Equipo y PINs</b><span class="mono">${EQUIPO.length}</span></div>
+    <div class="fbody">
+      <div class="fgrid">
+        <div><label class="flbl">Sucursal</label>
+          <select id="eq-suc">${Object.keys(LOCS).map(l=>`<option value="${l}">${LOCS[l].n}</option>`).join('')}</select></div>
+        <div><label class="flbl">Nombre</label>
+          <input type="text" id="eq-nombre" placeholder="Ej. María"></div>
+      </div>
+      <label class="flbl">PIN (4 números, único por sucursal)</label>
+      <input type="text" id="eq-pin" inputmode="numeric" maxlength="4" placeholder="Ej. 3742">
+      <button class="btn wide" onclick="crearAcceso()">Crear acceso</button>
+    </div>
+    ${Object.keys(porSuc).map(su => `
+      <div class="seccion" style="padding:0 14px">${esc(LOCS[su] ? LOCS[su].n : su)}</div>
+      ${porSuc[su].map(a => `<div class="linea">
+        <div class="lx"><div class="nm">${esc(a.nombre || 'Sin nombre')}</div>
+          <div class="mt">PIN ${esc(String(a.pin))} · ${a.rol === 'direccion' ? 'dirección' : 'tienda'}</div></div>
+        <button class="okbtn" style="background:#F3E9EC;color:var(--muted)" onclick="borrarAcceso(${a.id}, '${esc(a.nombre||'esta persona')}')">✕</button>
+      </div>`).join('')}`).join('')}
+  </div>`;
+}
+
 /* ===== Render ===== */
 function irTab(k){ tab=k; q=''; window.scrollTo(0,0); render(); }
 function render(){
@@ -577,8 +717,8 @@ function render(){
     document.getElementById('app').innerHTML = avisosBar() + vTienda();
     return;
   }
-  const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.filter(solPend).length], ['com','Compra del mes','🛒',0]];
-  const views = {inv:vExcel, pid:vPiden, com:vCompra};
+  const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.filter(solPend).length], ['com','Compra','🛒',0], ['aj','Ajustes','⚙️',0]];
+  const views = {inv:vExcel, pid:vPiden, com:vCompra, aj:vAjustes};
   if (!views[tab]) tab='inv';
   document.getElementById('nav').style.display='';
   document.getElementById('nav').innerHTML = tabs.map(([k,n,ic,p]) =>
