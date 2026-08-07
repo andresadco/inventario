@@ -130,7 +130,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v3</b></div>
+    <div class="sublog">Control de inventarios · <b>v4</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -170,7 +170,10 @@ const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;'
 const hoy = () => new Date().toISOString().slice(0,10);
 
 let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[];
-let sesion=null, tab='inv', q='', fcat='', soloVenta=true, hechasCom={}, pidiendo=null;
+let sesion=null, tab='inv', q='', fcat='', soloVenta=true, hechasCom={}, pidiendo=null, enviando=null;
+const solActiva = s => !s.recibida_at;                      // pendiente o en camino
+const solPend   = s => !s.enviada_at && !s.recibida_at;     // aún no se la mandan
+const solCamino = s => !!s.enviada_at && !s.recibida_at;    // ya va en camino
 
 const isDir = () => sesion && sesion.rol === 'direccion';
 const quien = () => (sesion && sesion.nombre) || 'Alguien';
@@ -197,7 +200,7 @@ async function cargar(){
     db.from('lfi_insumos').select('*').eq('activo', true).order('categoria').order('nombre'),
     db.from('lfi_stock').select('*'),
     db.from('lfi_presentaciones').select('*').order('orden'),
-    db.from('lfi_solicitudes').select('*').eq('resuelto', false).order('created_at'),
+    db.from('lfi_solicitudes').select('*').order('created_at', {ascending:false}).limit(120),
   ]);
   CAT = ins.data || [];
   INV = {}; INVD = {}; PRES = {};
@@ -254,7 +257,7 @@ async function contarCajas(loc, id){
   await cargar(); render();
 }
 /* La tienda avisa: "ya no tengo esto, mándame tanto" */
-function tieneSolic(loc, id){ return SOLIC.find(s => s.sucursal===loc && s.insumo_id===id); }
+function tieneSolic(loc, id){ return SOLIC.find(s => s.sucursal===loc && s.insumo_id===id && solActiva(s)); }
 function abrirPedir(id){
   pidiendo = id; render();
   setTimeout(() => document.getElementById('pd-'+id)?.focus(), 60);
@@ -275,9 +278,25 @@ async function quitarPedir(id){
   toast('Aviso quitado');
   await cargar(); render();
 }
-async function resolver(sid){
-  await db.from('lfi_solicitudes').update({resuelto:true}).eq('id', sid);
-  toast('✓ Resuelto');
+/* Dirección: "Ya se lo mandé" — mueve bodega→tienda y marca enviada */
+async function enviarSolic(sid){
+  const s = SOLIC.find(x => x.id === sid); if (!s) return;
+  const i = item(s.insumo_id);
+  const v = limpia(i, document.getElementById('env-'+sid)?.value);
+  if (v <= 0){ toast('Pon cuánto le mandas.'); return; }
+  const disp = stock('centro', s.insumo_id);
+  const r1 = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:s.insumo_id, p_delta:-v, p_tipo:'salida', p_nota:'Pedido enviado a '+LOCS[s.sucursal].short, p_por:quien()});
+  if (r1.error){ toast('No se pudo registrar el envío.'); return; }
+  await db.rpc('lfi_mover', {p_suc:s.sucursal, p_insumo:s.insumo_id, p_delta:v, p_tipo:'entrada', p_nota:'Enviado del comisariato (pedido)', p_por:quien()});
+  await db.from('lfi_solicitudes').update({enviada_at:new Date().toISOString(), enviada_por:quien(), enviada_cant:v, resuelto:true}).eq('id', sid);
+  enviando = null;
+  toast(disp < v ? `✓ Enviado (ojo: en bodega solo había ${fmtCant(i,disp)})` : `✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a ${LOCS[s.sucursal].short}`);
+  await cargar(); render();
+}
+/* Tienda: confirmar que llegó */
+async function recibirSolic(sid){
+  await db.from('lfi_solicitudes').update({recibida_at:new Date().toISOString(), recibida_por:quien()}).eq('id', sid);
+  toast('✓ Marcado como recibido');
   await cargar(); render();
 }
 /* Compra del mes: llegó → entra a bodega */
@@ -360,7 +379,9 @@ function vTienda(){
       <div class="fx"><div class="nm">${esc(i.nombre)}</div><div class="mt">${esc(i.unidad)}</div></div>
       <input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
         value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)">
-      ${sol
+      ${sol && solCamino(sol)
+        ? `<button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="recibirSolic(${sol.id})">🚚 ✓ Llegó</button>`
+        : sol
         ? `<button class="pedirbtn on" onclick="quitarPedir(${sol.id})">🙋 ${sol.cantidad ? fmtCant(i,sol.cantidad)+' '+esc(i.unidad) : 'Pedido'}</button>`
         : pidiendo === i.id
         ? `<input class="cant" style="width:70px" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" id="pd-${i.id}" placeholder="¿cuánto?"
@@ -369,8 +390,19 @@ function vTienda(){
         : `<button class="pedirbtn" onclick="abrirPedir('${i.id}')">🙋 Pedir</button>`}
     </div>`;
   }
+  const camino = SOLIC.filter(x => x.sucursal === loc && solCamino(x));
+  const bloqueCamino = camino.length ? `<div class="bloque" style="margin-top:4px">
+    <div class="bhead"><b>🚚 Viene en camino</b><span class="mono">tócale ✓ cuando llegue</span></div>
+    ${camino.map(x => { const ii = item(x.insumo_id); if(!ii) return '';
+      return `<div class="linea">
+        <div class="lx"><div class="nm">${esc(ii.nombre)}</div>
+          <div class="mt">te mandaron <b>${x.enviada_cant ? fmtCant(ii,x.enviada_cant)+' '+esc(ii.unidad) : 'tu pedido'}</b>${x.enviada_por ? ' · '+esc(x.enviada_por) : ''}</div></div>
+        <button class="okbtn" onclick="recibirSolic(${x.id})">✓ Llegó</button>
+      </div>`; }).join('')}
+  </div>` : '';
   return `<h2 class="page">Mi inventario</h2>
   <p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>
+  ${bloqueCamino}
   ${barra()}
   ${html || '<div class="card empty"><b>Sin resultados</b></div>'}`;
 }
@@ -412,20 +444,52 @@ function vExcel(){
 
 /* — DIRECCIÓN: me piden — */
 function vPiden(){
-  if (!SOLIC.length) return `<h2 class="page">Me piden</h2>
+  const pend = SOLIC.filter(solPend);
+  const camino = SOLIC.filter(solCamino);
+  const cerradas = SOLIC.filter(x => x.recibida_at).slice(0, 8);
+  if (!pend.length && !camino.length && !cerradas.length) return `<h2 class="page">Me piden</h2>
     <div class="card empty"><div class="emx">🙌</div><b>Nadie te ha pedido nada</b>Cuando en una tienda le den a 🙋 Pedir, aparece aquí.</div>`;
-  const filas = SOLIC.map(s => {
+
+  const filaPend = s => {
     const i = item(s.insumo_id); if (!i) return '';
     const hrs = Math.round((Date.now() - new Date(s.created_at).getTime())/3600000);
+    const disp = stock('centro', s.insumo_id);
+    if (enviando === s.id){
+      return `<div class="linea">
+        <div class="lx"><div class="nm">${esc(i.nombre)} → ${LOCS[s.sucursal].short}</div>
+          <div class="mt">¿cuánto le mandas? · en bodega tienes ${fmtCant(i,disp)} ${esc(i.unidad)}</div></div>
+        <input class="cant" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" id="env-${s.id}" value="${s.cantidad ? fmtCant(i,s.cantidad) : ''}" placeholder="0"
+          onkeydown="if(event.key==='Enter')enviarSolic(${s.id})" onfocus="this.select()">
+        <span class="uni">${esc(i.unidad)}</span>
+        <button class="okbtn" onclick="enviarSolic(${s.id})">✓</button>
+      </div>`;
+    }
     return `<div class="linea">
       <div class="lx"><div class="nm">${esc(i.nombre)}</div>
-        <div class="mt"><b>${LOCS[s.sucursal].short}</b> pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · tienen ${fmtCant(i, stock(s.sucursal, i.id))} ${esc(i.unidad)} · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
-      <button class="okbtn" onclick="resolver(${s.id})">✓ Ya se lo mandé</button>
+        <div class="mt"><b>${LOCS[s.sucursal].short}</b> pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · tienen ${fmtCant(i, stock(s.sucursal, i.id))} · bodega ${fmtCant(i,disp)} · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
+      <button class="okbtn" onclick="enviando=${s.id};render();setTimeout(()=>document.getElementById('env-${s.id}')?.focus(),60)">✓ Ya se lo mandé</button>
     </div>`;
-  }).join('');
+  };
+  const filaCamino = s => {
+    const i = item(s.insumo_id); if (!i) return '';
+    return `<div class="linea">
+      <div class="lx"><div class="nm">${esc(i.nombre)}</div>
+        <div class="mt">enviaste <b>${s.enviada_cant ? fmtCant(i,s.enviada_cant)+' '+esc(i.unidad) : '—'}</b> a <b>${LOCS[s.sucursal].short}</b> · esperando que confirmen recibido</div></div>
+    </div>`;
+  };
+  const filaCerrada = s => {
+    const i = item(s.insumo_id); if (!i) return '';
+    return `<div class="linea" style="opacity:.55">
+      <div class="lx"><div class="nm">${esc(i.nombre)}</div>
+        <div class="mt">${LOCS[s.sucursal].short} recibió <b>${s.enviada_cant ? fmtCant(i,s.enviada_cant)+' '+esc(i.unidad) : ''}</b>${s.recibida_por ? ' · confirmó '+esc(s.recibida_por) : ''} · ${String(s.recibida_at).slice(0,10)}</div></div>
+    </div>`;
+  };
+
   return `<h2 class="page">Me piden</h2>
-  <p class="sub">Lo que las tiendas te avisaron que ya no tienen. Cuando se los lleves, dale ✓ (y corrige los números en Inventario si hace falta).</p>
-  <div class="bloque">${filas}</div>`;
+  <p class="sub">Al dar <b>✓ Ya se lo mandé</b> pones cuánto mandas: sale de tu bodega, entra a la tienda y queda registrado. La tienda confirma cuando le llegue.</p>
+  ${pend.length ? `<div class="bloque"><div class="bhead"><b>🙋 Pendientes</b><span class="mono">${pend.length}</span></div>${pend.map(filaPend).join('')}</div>` : ''}
+  ${camino.length ? `<div class="bloque"><div class="bhead" style="background:var(--leaf)"><b>🚚 En camino</b><span class="mono">${camino.length}</span></div>${camino.map(filaCamino).join('')}</div>` : ''}
+  ${cerradas.length ? `<div class="bloque"><div class="bhead" style="background:#8A7178"><b>✓ Recibidos</b><span class="mono">últimos ${cerradas.length}</span></div>${cerradas.map(filaCerrada).join('')}</div>` : ''}`;
 }
 
 /* — DIRECCIÓN: compra del mes — */
@@ -468,7 +532,7 @@ function render(){
     document.getElementById('app').innerHTML = vTienda();
     return;
   }
-  const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.length], ['com','Compra del mes','🛒',0]];
+  const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.filter(solPend).length], ['com','Compra del mes','🛒',0]];
   const views = {inv:vExcel, pid:vPiden, com:vCompra};
   if (!views[tab]) tab='inv';
   document.getElementById('nav').style.display='';
