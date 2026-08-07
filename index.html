@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Lady Fresa · Inventario</title>
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍓</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -130,7 +131,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v4</b></div>
+    <div class="sublog">Control de inventarios · <b>v5</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -158,6 +159,48 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const db = supabase.createClient('https://ngpumyxxxlafuzcsaepy.supabase.co','sb_publishable_6Kma0iIJ6mFCK1A7YTDnRw_HKqxsLQv');
+
+/* ===== Notificaciones push ===== */
+const VAPID_PUB = 'BEb1urSUxK_EUnJI8QJl2Y4fMSTE937N1Xv_NMtudzY8n-h_QHS_0rKCeuigdFypNSlwd6UdnbRcc12Cdp8lQhc';
+const FN_URL = 'https://ngpumyxxxlafuzcsaepy.supabase.co/functions/v1/lfi-push';
+const ANON = 'sb_publishable_6Kma0iIJ6mFCK1A7YTDnRw_HKqxsLQv';
+let pushOK = false;
+if ('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+function b64ToU8(b){ const p='='.repeat((4-b.length%4)%4); const x=(b+p).replace(/-/g,'+').replace(/_/g,'/'); const r=atob(x); return Uint8Array.from([...r].map(c=>c.charCodeAt(0))); }
+function notificar(tipo, sucursal, titulo, cuerpo, endpoint){
+  try{ fetch(FN_URL, {method:'POST', headers:{'content-type':'application/json','Authorization':'Bearer '+ANON,'apikey':ANON},
+    body: JSON.stringify({tipo, sucursal, titulo, cuerpo, endpoint})}).catch(()=>{}); }catch(e){}
+}
+async function checarPush(){
+  try{
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    pushOK = !!sub && Notification.permission === 'granted';
+  }catch(e){}
+}
+async function activarAvisos(){
+  try{
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)){ toast('Este navegador no soporta avisos.'); return; }
+    const esIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const instalada = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    if (esIOS && !instalada){ toast('En iPhone primero agrega la app a tu pantalla de inicio (botón Compartir → Agregar a inicio) y ábrela desde ahí.'); return; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted'){ toast('No se activaron los avisos.'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: b64ToU8(VAPID_PUB)});
+    const j = sub.toJSON();
+    await db.from('lfi_push_subs').upsert({sucursal:sesion.sucursal, rol:sesion.rol, nombre:quien(), endpoint:sub.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth}, {onConflict:'endpoint'});
+    pushOK = true; render();
+    toast('🔔 Avisos activados. Te mandé uno de prueba.');
+    notificar('test', sesion.sucursal, '🔔 Avisos activados', 'Así te van a llegar los avisos de Lady Fresa.', sub.endpoint);
+  }catch(e){ toast('No se pudo activar: ' + (e.message || e)); }
+}
+function avisosBar(){
+  if (pushOK || !sesion) return '';
+  return `<button class="btn ghost wide" style="margin-top:12px" onclick="activarAvisos()">🔔 Activar avisos en este teléfono</button>`;
+}
 
 const LOCS = {
   centro:    {n:'Bodega (CEDIS)', short:'CEDIS', mini:'CED'},
@@ -227,7 +270,7 @@ async function entrar(){
 async function arrancar(){
   document.getElementById('login').style.display='none';
   document.getElementById('shell').style.display='';
-  await cargar(); render();
+  await cargar(); await checarPush(); render();
 }
 function salir(){ try{ localStorage.removeItem('lfs_sesion'); }catch(e){} location.reload(); }
 
@@ -268,6 +311,7 @@ async function confirmarPedir(loc, id){
   const { error } = await db.from('lfi_solicitudes').insert({sucursal:loc, insumo_id:id, por:quien(), cantidad: v > 0 ? v : null});
   pidiendo = null;
   if (error){ toast('No se pudo avisar.'); render(); return; }
+  notificar('pedido', loc, '🙋 ' + LOCS[loc].short + ' pide', i.nombre + (v > 0 ? ': ' + fmtCant(i,v) + ' ' + i.unidad : '') + ' · ' + quien());
   toast('🙋 Avisado. Andrés lo va a ver.');
   await cargar(); render();
 }
@@ -290,6 +334,7 @@ async function enviarSolic(sid){
   await db.rpc('lfi_mover', {p_suc:s.sucursal, p_insumo:s.insumo_id, p_delta:v, p_tipo:'entrada', p_nota:'Enviado del comisariato (pedido)', p_por:quien()});
   await db.from('lfi_solicitudes').update({enviada_at:new Date().toISOString(), enviada_por:quien(), enviada_cant:v, resuelto:true}).eq('id', sid);
   enviando = null;
+  notificar('enviado', s.sucursal, '🚚 Viene en camino', i.nombre + ': ' + fmtCant(i,v) + ' ' + i.unidad + ' · ' + quien());
   toast(disp < v ? `✓ Enviado (ojo: en bodega solo había ${fmtCant(i,disp)})` : `✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a ${LOCS[s.sucursal].short}`);
   await cargar(); render();
 }
@@ -529,7 +574,7 @@ function render(){
   if (!isDir()){
     document.getElementById('nav').style.display='none';
     document.body.style.paddingBottom='30px';
-    document.getElementById('app').innerHTML = vTienda();
+    document.getElementById('app').innerHTML = avisosBar() + vTienda();
     return;
   }
   const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.filter(solPend).length], ['com','Compra del mes','🛒',0]];
@@ -538,7 +583,7 @@ function render(){
   document.getElementById('nav').style.display='';
   document.getElementById('nav').innerHTML = tabs.map(([k,n,ic,p]) =>
     `<button class="${tab===k?'on':''}" onclick="irTab('${k}')"><span class="tic">${ic}</span>${n}${p?`<span class="pip">${p}</span>`:''}</button>`).join('');
-  document.getElementById('app').innerHTML = views[tab]();
+  document.getElementById('app').innerHTML = avisosBar() + views[tab]();
 }
 
 (async () => {

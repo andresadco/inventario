@@ -1,0 +1,9 @@
+{
+  "name": "Lady Fresa · Inventario",
+  "short_name": "Inventario",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FFF7F4",
+  "theme_color": "#2B1A1F"
+}
