@@ -142,7 +142,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v14</b></div>
+    <div class="sublog">Control de inventarios · <b>v15</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -231,6 +231,7 @@ const solPend   = s => !s.enviada_at && !s.recibida_at;     // aún no se la man
 const solCamino = s => !!s.enviada_at && !s.recibida_at;    // ya va en camino
 
 const isDir = () => sesion && sesion.rol === 'direccion';
+const veCostos = () => isDir() && !!(sesion && sesion.ve_costos);
 const quien = () => (sesion && sesion.nombre) || 'Alguien';
 const item = id => CAT.find(i => i.id === id);
 const stock = (l,id) => Number((INV[l]||{})[id]) || 0;
@@ -278,7 +279,7 @@ async function entrar(){
   if (!/^\d{4}$/.test(pin)){ err.textContent='El PIN es de 4 números.'; return; }
   const { data } = await db.from('lfi_accesos').select('*').eq('sucursal',suc).eq('pin',pin).maybeSingle();
   if (!data){ err.textContent='PIN incorrecto para esa sucursal.'; return; }
-  sesion = {sucursal:data.sucursal, rol:data.rol, nombre:data.nombre || LOCS[data.sucursal].short};
+  sesion = {sucursal:data.sucursal, rol:data.rol, nombre:data.nombre || LOCS[data.sucursal].short, ve_costos: !!data.ve_costos};
   try{ localStorage.setItem('lfs_sesion', JSON.stringify(sesion)); }catch(e){}
   tab = 'inv';
   await arrancar();
@@ -536,7 +537,7 @@ async function crearAcceso(){
   const suc = v('eq-suc'), nombre = v('eq-nombre'), pin = v('eq-pin');
   if (!nombre){ toast('Ponle nombre a la persona.'); return; }
   if (!/^\d{4}$/.test(pin)){ toast('El PIN debe ser de 4 números.'); return; }
-  const { error } = await db.from('lfi_accesos').insert({sucursal:suc, pin, nombre, rol: suc === 'centro' ? 'direccion' : 'tienda'});
+  const { error } = await db.from('lfi_accesos').insert({sucursal:suc, pin, nombre, rol: suc === 'centro' ? 'direccion' : 'tienda', ve_costos: !!document.getElementById('eq-costos')?.checked});
   if (error){ toast(error.message.includes('duplicate') ? 'Ese PIN ya existe en esa sucursal, usa otro.' : 'No se pudo crear.'); return; }
   toast(`✓ ${nombre} creado. Pásale su PIN por privado.`);
   await cargar(); render();
@@ -767,6 +768,7 @@ function vExcel(){
   <p class="sub">Tu tabla de siempre, pero viva: lo que cuentan las tiendas aparece aquí solo. El chip te dice <b>cuántos días te alcanza</b> con el consumo real. Puedes corregir cualquier número.</p>
   ${formsInventario(null)}
   ${(() => {
+    if (!veCostos()) return '';
     const conCosto = CAT.some(i => Number(i.costo) > 0);
     if (!conCosto) return '';
     const valorLoc = l => CAT.reduce((a,i) => a + stock(l,i.id) * (Number(i.costo)||0), 0);
@@ -886,12 +888,12 @@ function vCompra(){
   const sinCosto = ns.filter(n => !(Number(n.i.costo)>0)).length;
   const bloques = Object.entries(porProv).map(([p, items]) => `
     <div class="bloque">
-      <div class="bhead"><b>${esc(p)}</b><span class="mono">${items.length} insumos${items.some(x=>costoDe(x)>0) ? ' · ' + money(items.reduce((a,x)=>a+costoDe(x),0)) : ''}</span></div>
+      <div class="bhead"><b>${esc(p)}</b><span class="mono">${items.length} insumos${veCostos() && items.some(x=>costoDe(x)>0) ? ' · ' + money(items.reduce((a,x)=>a+costoDe(x),0)) : ''}</span></div>
       ${items.map(n => {
         const hecha = hechasCom[n.i.id];
         return `<div class="linea">
           <div class="lx"><div class="nm">${esc(n.i.nombre)}</div>
-            <div class="mt">tienes ${fmtCant(n.i,n.pos)} en total · gastas ${fmtCant(n.i,n.c)}/mes${n.dias!==null?` · te alcanza <b>${n.dias} días</b>`:''}${costoDe(n)>0 ? ` · <b>≈ ${money(costoDe(n))}</b>` : ''}</div></div>
+            <div class="mt">tienes ${fmtCant(n.i,n.pos)} en total · gastas ${fmtCant(n.i,n.c)}/mes${n.dias!==null?` · te alcanza <b>${n.dias} días</b>`:''}${veCostos() && costoDe(n)>0 ? ` · <b>≈ ${money(costoDe(n))}</b>` : ''}</div></div>
           <input class="cant ${hecha?'hecha':''}" type="number" inputmode="numeric" id="cp-${n.i.id}"
             value="${n.f>1 ? n.packs : fmtCant(n.i,n.falta)}" onfocus="this.select()">
           <span class="uni">${n.f>1 ? esc(n.i.empaque||'paq') : esc(n.i.unidad)}</span>
@@ -904,7 +906,7 @@ function vCompra(){
     </div>`).join('');
   return `<h2 class="page">Compra del mes</h2>
   <p class="sub">Lo que falta para cubrir <b>un mes de consumo real</b> con lo que hay en todo el negocio. Copia la lista a cada proveedor; cuando llegue, dale <b>✓ Llegó</b> y entra a tu bodega solo.</p>
-  ${granTotal > 0 ? `<div class="card" style="padding:14px 16px;margin-bottom:12px;display:flex;align-items:baseline;gap:10px">
+  ${veCostos() && granTotal > 0 ? `<div class="card" style="padding:14px 16px;margin-bottom:12px;display:flex;align-items:baseline;gap:10px">
     <span class="mt" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)">Esta compra te va a costar</span>
     <span class="mono" style="font-size:22px;font-weight:700;margin-left:auto">${money(granTotal)}</span>
   </div>${sinCosto ? `<p class="sub" style="margin-top:-6px;font-size:12px">⚠ ${sinCosto} insumos aún sin costo capturado (agrégalos en ⚙️ Ajustes → Costos) — el total real será mayor.</p>` : ''}` : ''}
@@ -938,15 +940,15 @@ function vAjustes(){
           <input type="text" id="ni-emp" placeholder="caja, paquete…"></div>
         <div><label class="flbl">Piezas por empaque</label>
           <input type="number" inputmode="numeric" id="ni-factor" placeholder="1"></div>
-        <div><label class="flbl">Costo (como lo compras)</label>
-          <input type="number" inputmode="decimal" id="ni-costo" placeholder="$ opcional"></div>
+        ${veCostos() ? `<div><label class="flbl">Costo (como lo compras)</label>
+          <input type="number" inputmode="decimal" id="ni-costo" placeholder="$ opcional"></div>` : ''}
       </div>
       <label class="chk2"><input type="checkbox" id="ni-frac"> Se cuenta con decimales (se pesa: kg, litros)</label>
       <button class="btn wide" onclick="crearInsumo()">Crear insumo</button>
     </div>
   </div>
 
-  <div class="bloque">
+  ${veCostos() ? `  <div class="bloque">
     <div class="bhead"><b>💰 Costos</b><span class="mono">solo tú los ves</span></div>
     <div class="fbody" style="padding-bottom:6px">
       <input type="text" placeholder="Buscar insumo…" value="${esc(qCost)}" style="margin-bottom:4px"
@@ -961,7 +963,7 @@ function vAjustes(){
         <input class="cant" type="number" inputmode="decimal" value="${val}" placeholder="$" onfocus="this.select()" onchange="guardarCosto('${i.id}', this.value)">
       </div>`;
     }).join('')}
-  </div>
+  </div>` : ''}
 
   <div class="bloque">
     <div class="bhead"><b>👥 Equipo y PINs</b><span class="mono">${EQUIPO.length}</span></div>
@@ -974,13 +976,14 @@ function vAjustes(){
       </div>
       <label class="flbl">PIN (4 números, único por sucursal)</label>
       <input type="text" id="eq-pin" inputmode="numeric" maxlength="4" placeholder="Ej. 3742">
+      ${veCostos() ? `<label class="chk2"><input type="checkbox" id="eq-costos"> 💰 Puede ver costos y valores en pesos</label>` : ''}
       <button class="btn wide" onclick="crearAcceso()">Crear acceso</button>
     </div>
     ${Object.keys(porSuc).map(su => `
       <div class="seccion" style="padding:0 14px">${esc(LOCS[su] ? LOCS[su].n : su)}</div>
       ${porSuc[su].map(a => `<div class="linea">
         <div class="lx"><div class="nm">${esc(a.nombre || 'Sin nombre')}</div>
-          <div class="mt">PIN ${esc(String(a.pin))} · ${a.rol === 'direccion' ? 'dirección' : 'tienda'}</div></div>
+          <div class="mt">PIN ${esc(String(a.pin))} · ${a.rol === 'direccion' ? 'dirección' : 'tienda'}${a.ve_costos ? ' · 💰 ve costos' : ''}</div></div>
         <button class="okbtn" style="background:#F3E9EC;color:var(--muted)" onclick="borrarAcceso(${a.id}, '${esc(a.nombre||'esta persona')}')">✕</button>
       </div>`).join('')}`).join('')}
   </div>`;
