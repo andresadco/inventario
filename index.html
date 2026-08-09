@@ -141,7 +141,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v10</b></div>
+    <div class="sublog">Control de inventarios · <b>v12</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -347,7 +347,13 @@ async function enviarSolic(sid){
   await db.from('lfi_solicitudes').update({enviada_at:new Date().toISOString(), enviada_por:quien(), enviada_cant:v, resuelto:true}).eq('id', sid);
   enviando = null;
   notificar('enviado', s.sucursal, '🚚 Viene en camino', i.nombre + ': ' + fmtCant(i,v) + ' ' + i.unidad + ' · ' + quien());
-  toast(disp < v ? `✓ Enviado (ojo: en bodega solo había ${fmtCant(i,disp)})` : `✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a ${LOCS[s.sucursal].short}`);
+  const suc = s.sucursal;
+  toastAccion(disp < v ? `✓ Enviado (en bodega solo había ${fmtCant(i,disp)})` : `✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a ${LOCS[suc].short}`, 'Deshacer', async () => {
+    await db.rpc('lfi_mover', {p_suc:suc, p_insumo:s.insumo_id, p_delta:-v, p_tipo:'ajuste', p_nota:'Deshecho: envío de pedido', p_por:quien()});
+    await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:s.insumo_id, p_delta:v, p_tipo:'ajuste', p_nota:'Deshecho: envío (regreso a bodega)', p_por:quien()});
+    await db.from('lfi_solicitudes').update({enviada_at:null, enviada_por:null, enviada_cant:null, resuelto:false}).eq('id', sid);
+    toast('↩︎ Envío deshecho, el pedido volvió a pendientes'); await cargar(); render();
+  });
   await cargar(); render();
 }
 /* Tienda: confirmar que llegó (con cantidad editable si llegó distinto) */
@@ -367,7 +373,32 @@ async function recibirSolic(sid, conCampo){
     if (error){ toast('No se pudo ajustar.'); return; }
   }
   await db.from('lfi_solicitudes').update({recibida_at:new Date().toISOString(), recibida_por:quien(), recibida_cant:v}).eq('id', sid);
-  toast(delta === 0 ? '✓ Recibido completo' : `✓ Recibido: ${fmtCant(i,v)} (se ajustó tu inventario)`);
+  toastAccion(delta === 0 ? '✓ Recibido completo' : `✓ Recibido: ${fmtCant(i,v)} (se ajustó tu inventario)`, 'Deshacer', async () => {
+    if (delta !== 0) await db.rpc('lfi_mover', {p_suc:so.sucursal, p_insumo:so.insumo_id, p_delta:-delta, p_tipo:'ajuste', p_nota:'Deshecho: ajuste al recibir', p_por:quien()});
+    await db.from('lfi_solicitudes').update({recibida_at:null, recibida_por:null, recibida_cant:null}).eq('id', sid);
+    toast('↩︎ Regresó a "viene en camino"'); await cargar(); render();
+  });
+  await cargar(); render();
+}
+/* Dirección: eliminar un pedido del registro (no mueve inventario) */
+async function eliminarSolic(sid){
+  if (!confirm('¿Eliminar este pedido del registro? El inventario no se mueve, solo se borra el registro.')) return;
+  await db.from('lfi_solicitudes').delete().eq('id', sid);
+  toast('🗑 Pedido eliminado del registro');
+  await cargar(); render();
+}
+/* Tienda: des-recibir un pedido (corrección tardía, en cualquier momento) */
+async function desRecibir(sid){
+  const so = SOLIC.find(x => x.id === sid); if (!so || !so.recibida_at) return;
+  const i = item(so.insumo_id); if (!i) return;
+  if (!confirm(`¿Regresar "${i.nombre}" a "viene en camino" para corregirlo?`)) return;
+  const delta = Math.round(((Number(so.recibida_cant) || Number(so.enviada_cant) || 0) - (Number(so.enviada_cant) || 0))*1000)/1000;
+  if (delta !== 0){
+    const { error } = await db.rpc('lfi_mover', {p_suc:so.sucursal, p_insumo:so.insumo_id, p_delta:-delta, p_tipo:'ajuste', p_nota:'Corrección: se des-recibió el pedido', p_por:quien()});
+    if (error){ toast('No se pudo corregir.'); return; }
+  }
+  await db.from('lfi_solicitudes').update({recibida_at:null, recibida_por:null, recibida_cant:null}).eq('id', sid);
+  toast('↩︎ Regresó a "viene en camino". Recíbelo de nuevo con el número correcto.');
   await cargar(); render();
 }
 /* Compra del mes: llegó → entra a bodega */
@@ -380,7 +411,11 @@ async function llego(id){
   const { error } = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:id, p_delta:v, p_tipo:'entrada', p_nota:'Compra del mes '+(i.proveedor||''), p_por:quien()});
   if (error){ toast('No se pudo registrar.'); return; }
   hechasCom[id] = true;
-  toast(`✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a bodega`);
+  toastAccion(`✓ ${esc(i.nombre)}: ${fmtCant(i,v)} a bodega`, 'Deshacer', async () => {
+    await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:id, p_delta:-v, p_tipo:'ajuste', p_nota:'Deshecho: llegada de compra', p_por:quien()});
+    hechasCom[id] = false;
+    toast('↩︎ Llegada deshecha'); await cargar(); render();
+  });
   await cargar(); render();
 }
 /* Entrada directa de mercancía y transferencias entre ubicaciones */
@@ -399,7 +434,10 @@ async function registrarEntrada(){
   const { error } = await db.rpc('lfi_mover', {p_suc:loc, p_insumo:i.id, p_delta:v, p_tipo:'entrada', p_nota:'Entrada de mercancía' + (nota ? ' · ' + nota : ''), p_por:quien()});
   if (error){ toast('No se pudo registrar.'); return; }
   formInv = null;
-  toast(`✓ Entraron ${fmtCant(i,v)} ${i.unidad} de ${i.nombre} a ${LOCS[loc].short}`);
+  toastAccion(`✓ Entraron ${fmtCant(i,v)} ${esc(i.unidad)} de ${esc(i.nombre)} a ${LOCS[loc].short}`, 'Deshacer', async () => {
+    await db.rpc('lfi_mover', {p_suc:loc, p_insumo:i.id, p_delta:-v, p_tipo:'ajuste', p_nota:'Deshecho: entrada de mercancía', p_por:quien()});
+    toast('↩︎ Entrada deshecha'); await cargar(); render();
+  });
   await cargar(); render();
 }
 async function transferirMerc(){
@@ -414,7 +452,11 @@ async function transferirMerc(){
   if (r1.error){ toast('No se pudo transferir.'); return; }
   await db.rpc('lfi_mover', {p_suc:a, p_insumo:i.id, p_delta:v, p_tipo:'entrada', p_nota:'Transferencia de ' + LOCS[de].short, p_por:quien()});
   formInv = null;
-  toast(disp < v ? `✓ Transferido (ojo: en ${LOCS[de].short} solo había ${fmtCant(i,disp)})` : `✓ ${fmtCant(i,v)} ${i.unidad} de ${LOCS[de].short} → ${LOCS[a].short}`);
+  toastAccion(disp < v ? `✓ Transferido (en ${LOCS[de].short} solo había ${fmtCant(i,disp)})` : `✓ ${fmtCant(i,v)} ${esc(i.unidad)} ${LOCS[de].short} → ${LOCS[a].short}`, 'Deshacer', async () => {
+    await db.rpc('lfi_mover', {p_suc:a,  p_insumo:i.id, p_delta:-v, p_tipo:'ajuste', p_nota:'Deshecho: transferencia', p_por:quien()});
+    await db.rpc('lfi_mover', {p_suc:de, p_insumo:i.id, p_delta:v,  p_tipo:'ajuste', p_nota:'Deshecho: transferencia (regreso)', p_por:quien()});
+    toast('↩︎ Transferencia deshecha'); await cargar(); render();
+  });
   await cargar(); render();
 }
 function formsInventario(fijo){
@@ -667,6 +709,7 @@ function cuadroMes(loc){
     return `<div class="linea">
       <div class="lx"><div class="nm">${esc(i.nombre)}</div>
         <div class="mt">${String(x.created_at).slice(5,10).split('-').reverse().join('/')} · pediste ${x.cantidad!=null ? fmtCant(i,x.cantidad)+' '+esc(i.unidad) : '—'} · ${est}</div></div>
+      ${x.recibida_at ? `<button class="okbtn" style="background:#F3E9EC;color:var(--muted)" title="Corregir" onclick="desRecibir(${x.id})">↩︎</button>` : ''}
     </div>`;
   }).join('');
   return `<div class="bloque" style="margin-top:20px">
@@ -781,6 +824,7 @@ function resumenMes(){
       return `<div class="linea">
         <div class="lx"><div class="nm">${esc(i.nombre)}</div>
           <div class="mt">${String(x.created_at).slice(5,10).split('-').reverse().join('/')} · pidió ${x.por ? esc(x.por) : '—'} ${x.cantidad!=null ? fmtCant(i,x.cantidad)+' '+esc(i.unidad) : ''} · ${est}</div></div>
+        <button class="okbtn" style="background:#F3E9EC;color:var(--muted)" onclick="eliminarSolic(${x.id})">✕</button>
       </div>`;
     }).join('')}`;
   }).join('');
