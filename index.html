@@ -106,6 +106,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .linea .cant{width:74px;height:46px;font-size:17px}
 .linea .cant.hecha{border-color:#BFE3CE;color:var(--leaf);background:#F8FCF9}
 .uni{font-size:10.5px;color:var(--muted);font-weight:700;flex:none;max-width:56px}
+.gsuc{background:var(--cream);padding:8px 14px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--line)}
 .bfoot{padding:12px 14px;background:#FFFBFA;border-top:1px solid var(--line);display:flex;gap:8px}
 .btn{background:var(--fresa);color:#fff;border-radius:12px;padding:13px 16px;font-weight:700;font-size:14px;box-shadow:0 4px 14px -6px rgba(232,41,75,.5)}
 .btn:active{background:var(--fresa-dark)}
@@ -141,7 +142,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v12</b></div>
+    <div class="sublog">Control de inventarios · <b>v13</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -219,6 +220,7 @@ const LOCS = {
   balbuena:  {n:'Tienda Balbuena', short:'Balbuena', mini:'BAL'},
 };
 const ORDEN_LOCS = ['moctezuma','narvarte','balbuena','centro'];
+const TIENDAS_ORD = ['moctezuma','narvarte','balbuena','centro'];
 const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hoy = () => new Date().toISOString().slice(0,10);
 
@@ -778,7 +780,7 @@ function vPiden(){
     }
     return `<div class="linea">
       <div class="lx"><div class="nm">${esc(i.nombre)}</div>
-        <div class="mt"><b>${LOCS[s.sucursal].short}</b> pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · tienen ${fmtCant(i, stock(s.sucursal, i.id))} · bodega ${fmtCant(i,disp)} · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
+        <div class="mt">pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · tienen ${fmtCant(i, stock(s.sucursal, i.id))} · bodega ${fmtCant(i,disp)} · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
       <button class="okbtn" onclick="enviando=${s.id};render();setTimeout(()=>document.getElementById('env-${s.id}')?.focus(),60)">✓ Ya se lo mandé</button>
     </div>`;
   };
@@ -786,7 +788,7 @@ function vPiden(){
     const i = item(s.insumo_id); if (!i) return '';
     return `<div class="linea">
       <div class="lx"><div class="nm">${esc(i.nombre)}</div>
-        <div class="mt">enviaste <b>${s.enviada_cant ? fmtCant(i,s.enviada_cant)+' '+esc(i.unidad) : '—'}</b> a <b>${LOCS[s.sucursal].short}</b> · esperando que confirmen recibido</div></div>
+        <div class="mt">enviaste <b>${s.enviada_cant ? fmtCant(i,s.enviada_cant)+' '+esc(i.unidad) : '—'}</b> · esperando que confirmen recibido</div></div>
     </div>`;
   };
   const filaCerrada = s => {
@@ -797,10 +799,15 @@ function vPiden(){
     </div>`;
   };
 
+  const porTienda = (lista, fila) => TIENDAS_ORD.map(su => {
+    const xs = lista.filter(x => x.sucursal === su);
+    if (!xs.length) return '';
+    return `<div class="gsuc">${esc(LOCS[su] ? LOCS[su].short : su)} · ${xs.length}</div>` + xs.map(fila).join('');
+  }).join('');
   return `<h2 class="page">Me piden</h2>
   <p class="sub">Al dar <b>✓ Ya se lo mandé</b> pones cuánto mandas: sale de tu bodega, entra a la tienda y queda registrado. La tienda confirma cuando le llegue.</p>
-  ${pend.length ? `<div class="bloque"><div class="bhead"><b>🙋 Pendientes</b><span class="mono">${pend.length}</span></div>${pend.map(filaPend).join('')}</div>` : ''}
-  ${camino.length ? `<div class="bloque"><div class="bhead" style="background:var(--leaf)"><b>🚚 En camino</b><span class="mono">${camino.length}</span></div>${camino.map(filaCamino).join('')}</div>` : ''}
+  ${pend.length ? `<div class="bloque"><div class="bhead"><b>🙋 Pendientes</b><span class="mono">${pend.length}</span></div>${porTienda(pend, filaPend)}</div>` : ''}
+  ${camino.length ? `<div class="bloque"><div class="bhead" style="background:var(--leaf)"><b>🚚 En camino</b><span class="mono">${camino.length}</span></div>${porTienda(camino, filaCamino)}</div>` : ''}
   ${cerradas.length ? `<div class="bloque"><div class="bhead" style="background:#8A7178"><b>✓ Recibidos</b><span class="mono">últimos ${cerradas.length}</span></div>${cerradas.map(filaCerrada).join('')}</div>` : ''}
   ${resumenMes()}`;
 }
