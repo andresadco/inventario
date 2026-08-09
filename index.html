@@ -144,7 +144,7 @@ button.bhead.acc{width:100%;justify-content:flex-start;border:none;font-family:i
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v16</b></div>
+    <div class="sublog">Control de inventarios · <b>v17</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -226,8 +226,8 @@ const TIENDAS_ORD = ['moctezuma','narvarte','balbuena','centro'];
 const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hoy = () => new Date().toISOString().slice(0,10);
 
-let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[], EQUIPO=[];
-let sesion=null, tab='inv', q='', fcat='', soloVenta=true, hechasCom={}, pidiendo=null, enviando=null;
+let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[], EQUIPO=[], RECETAS={};
+let sesion=null, tab='inv', q='', fcat='', soloVenta=true, hechasCom={}, pidiendo=null, enviando=null, prodSel=null, recSel=null;
 const solActiva = s => !s.recibida_at;                      // pendiente o en camino
 const solPend   = s => !s.enviada_at && !s.recibida_at;     // aún no se la mandan
 const solCamino = s => !!s.enviada_at && !s.recibida_at;    // ya va en camino
@@ -256,12 +256,14 @@ function cobertura(i){
 }
 
 async function cargar(){
-  const [ins, stk, prs, sol, acc] = await Promise.all([
+  const [ins, stk, prs, sol, acc, rec, recl] = await Promise.all([
     db.from('lfi_insumos').select('*').eq('activo', true).order('categoria').order('nombre'),
     db.from('lfi_stock').select('*'),
     db.from('lfi_presentaciones').select('*').order('orden'),
     db.from('lfi_solicitudes').select('*').order('created_at', {ascending:false}).limit(120),
     db.from('lfi_accesos').select('*').order('sucursal').order('nombre'),
+    db.from('lfi_recetas').select('*'),
+    db.from('lfi_receta_lineas').select('*').order('id'),
   ]);
   CAT = ins.data || [];
   INV = {}; INVD = {}; PRES = {};
@@ -270,6 +272,9 @@ async function cargar(){
   (prs.data||[]).forEach(p => { (PRES[p.insumo_id]=PRES[p.insumo_id]||[]).push(p); });
   SOLIC = sol.data || [];
   EQUIPO = acc.data || [];
+  RECETAS = {};
+  (rec.data||[]).forEach(r => { RECETAS[r.producto_id] = {rendimiento: Number(r.rendimiento)||1, lineas: []}; });
+  (recl.data||[]).forEach(l => { if (RECETAS[l.producto_id]) RECETAS[l.producto_id].lineas.push(l); });
 }
 
 /* ===== Sesión ===== */
@@ -486,6 +491,7 @@ function formsInventario(fijo){
   const botones = `<div class="expbar2">
     <button class="btn ${formInv==='ent'?'':'ghost'}" onclick="formInv = formInv==='ent' ? null : 'ent'; render()">📥 Entrada</button>
     <button class="btn ${formInv==='tra'?'':'ghost'}" onclick="formInv = formInv==='tra' ? null : 'tra'; render()">🔄 Transferir</button>
+    ${!fijo ? `<button class="btn ${formInv==='pro'?'':'ghost'}" onclick="formInv = formInv==='pro' ? null : 'pro'; render()">🥣 Producir</button>` : ''}
   </div>`;
   if (formInv === 'ent') return botones + dl + `<div class="bloque"><div class="fbody">
     <label class="flbl">¿Qué llegó?</label>
@@ -509,7 +515,111 @@ function formsInventario(fijo){
     <input type="number" inputmode="decimal" id="tr-cant" placeholder="0">
     <button class="btn wide" onclick="transferirMerc()">✓ Transferir</button>
   </div></div>`;
+  if (formInv === 'pro'){
+    const prods = Object.keys(RECETAS).map(pid => item(pid)).filter(Boolean);
+    if (!prodSel || !RECETAS[prodSel]) prodSel = prods[0] ? prods[0].id : null;
+    const rec = prodSel ? RECETAS[prodSel] : null;
+    const prod = prodSel ? item(prodSel) : null;
+    const lotes = Math.round((Number(document.getElementById('pr-lotes')?.value) || 1)*100)/100 || 1;
+    return botones + `<div class="bloque"><div class="fbody">
+      <div class="fgrid">
+        <div><label class="flbl">¿Qué vas a hacer?</label>
+          <select id="pr-prod" onchange="prodSel=this.value;render()">${prods.map(p => `<option value="${p.id}" ${p.id===prodSel?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select></div>
+        <div><label class="flbl">¿Cuántos lotes?</label>
+          <input type="number" inputmode="decimal" id="pr-lotes" value="${lotes}" onchange="render()"></div>
+      </div>
+      ${rec && rec.lineas.length ? `
+        <div class="seccion" style="margin-top:4px">Se va a descontar de tu bodega</div>
+        ${rec.lineas.map(l => { const li = item(l.insumo_id); if (!li) return '';
+          const v = Math.round(Number(l.cantidad)*lotes*1000)/1000;
+          const disp = stock('centro', l.insumo_id);
+          return `<div class="linea" style="padding:8px 0">
+            <div class="lx"><div class="nm" style="font-size:14px">${esc(li.nombre)}</div>
+              <div class="mt">${fmtCant(li,v)} ${esc(li.unidad)} · en bodega hay ${fmtCant(li,disp)}${disp < v ? ' <b style="color:var(--fresa)">⚠ no alcanza</b>' : ''}</div></div>
+          </div>`; }).join('')}
+        <div class="mt" style="margin:6px 0 12px;font-weight:700">🥣 Vas a producir <b>${fmtCant(prod, (Number(rec.rendimiento)||1)*lotes)} ${esc(prod.unidad)}</b> de ${esc(prod.nombre)}</div>
+        <button class="btn wide" onclick="producir()">✓ Producir</button>`
+      : `<div class="empty" style="padding:14px">Esta receta aún no tiene ingredientes.<br>Ármala en ⚙️ Ajustes → 🥣 Recetas.</div>`}
+    </div></div>`;
+  }
   return botones + dl;
+}
+
+/* Producción: la receta descuenta ingredientes y da de alta el producto */
+function costoReceta(pid){
+  const r = RECETAS[pid]; if (!r) return 0;
+  return r.lineas.reduce((a,l) => a + Number(l.cantidad) * (Number(item(l.insumo_id)?.costo)||0), 0);
+}
+async function recalcCostoProducto(pid){
+  const r = RECETAS[pid]; if (!r) return;
+  const total = costoReceta(pid);
+  const rinde = Number(r.rendimiento)||1;
+  if (total > 0 && rinde > 0)
+    await db.from('lfi_insumos').update({costo: Math.round((total/rinde)*10000)/10000}).eq('id', pid);
+}
+async function producir(){
+  const pid = prodSel; const rec = RECETAS[pid]; const prod = item(pid);
+  if (!prod || !rec || !rec.lineas.length){ toast('Primero arma la receta en ⚙️ Ajustes → Recetas.'); return; }
+  const lotes = Math.round((Number(document.getElementById('pr-lotes')?.value)||0)*100)/100;
+  if (lotes <= 0){ toast('Pon cuántos lotes vas a hacer.'); return; }
+  const rinde = Math.round((Number(rec.rendimiento)||1) * lotes * 1000)/1000;
+  for (const l of rec.lineas){
+    const v = Math.round(Number(l.cantidad) * lotes * 1000)/1000;
+    const r = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:l.insumo_id, p_delta:-v, p_tipo:'salida', p_nota:'Producción: ' + prod.nombre, p_por:quien()});
+    if (r.error){ toast('No se pudo descontar ' + (item(l.insumo_id)?.nombre||'un ingrediente')); return; }
+  }
+  await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:pid, p_delta:rinde, p_tipo:'entrada', p_nota:'Producción (' + lotes + ' lote' + (lotes!==1?'s':'') + ')', p_por:quien()});
+  await recalcCostoProducto(pid);
+  formInv = null;
+  const lineasCopia = rec.lineas.map(l => ({insumo_id: l.insumo_id, cantidad: Number(l.cantidad)}));
+  toastAccion(`🥣 Hiciste ${fmtCant(prod, rinde)} ${esc(prod.unidad)} de ${esc(prod.nombre)}`, 'Deshacer', async () => {
+    for (const l of lineasCopia){
+      await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:l.insumo_id, p_delta: Math.round(l.cantidad*lotes*1000)/1000, p_tipo:'ajuste', p_nota:'Deshecho: producción', p_por:quien()});
+    }
+    await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:pid, p_delta:-rinde, p_tipo:'ajuste', p_nota:'Deshecho: producción', p_por:quien()});
+    toast('↩︎ Producción deshecha'); await cargar(); render();
+  });
+  await cargar(); render();
+}
+/* Editar recetas */
+async function crearReceta(){
+  const i = insumoPorNombre(document.getElementById('re-nuevo')?.value);
+  if (!i){ toast('Elige un insumo de la lista.'); return; }
+  if (RECETAS[i.id]){ toast('Ese insumo ya tiene receta.'); recSel = i.id; render(); return; }
+  const { error } = await db.from('lfi_recetas').insert({producto_id: i.id, rendimiento: 1});
+  if (error){ toast('No se pudo crear.'); return; }
+  recSel = i.id; toast('✓ Receta creada. Agrégale sus ingredientes.');
+  await cargar(); render();
+}
+async function setRendimiento(pid, val){
+  const v = Math.max(0.001, Number(val)||1);
+  await db.from('lfi_recetas').update({rendimiento: v}).eq('producto_id', pid);
+  RECETAS[pid].rendimiento = v;
+  await recalcCostoProducto(pid);
+  toast('✓ Rendimiento guardado'); await cargar(); render();
+}
+async function setLineaCant(lid, pid, val){
+  const v = Number(val)||0;
+  if (v <= 0){ toast('Cantidad inválida.'); render(); return; }
+  await db.from('lfi_receta_lineas').update({cantidad: v}).eq('id', lid);
+  await cargar(); await recalcCostoProducto(pid);
+  toast('✓ Receta actualizada'); render();
+}
+async function quitarLinea(lid, pid){
+  await db.from('lfi_receta_lineas').delete().eq('id', lid);
+  await cargar(); await recalcCostoProducto(pid);
+  toast('Ingrediente quitado'); render();
+}
+async function agregarLinea(pid){
+  const i = insumoPorNombre(document.getElementById('re-ins')?.value);
+  if (!i){ toast('Elige un ingrediente de la lista.'); return; }
+  if (i.id === pid){ toast('Un producto no puede llevarse a sí mismo 😅'); return; }
+  const v = Number(document.getElementById('re-cant')?.value)||0;
+  if (v <= 0){ toast('Pon la cantidad por lote.'); return; }
+  const { error } = await db.from('lfi_receta_lineas').insert({producto_id: pid, insumo_id: i.id, cantidad: v});
+  if (error){ toast('No se pudo agregar.'); return; }
+  await cargar(); await recalcCostoProducto(pid);
+  toast('✓ ' + esc(i.nombre) + ' agregado'); render();
 }
 
 /* Ajustes: alta de insumos y equipo */
@@ -989,8 +1099,40 @@ function vAjustes(){
         <button class="okbtn" style="background:#F3E9EC;color:var(--muted)" onclick="borrarAcceso(${a.id}, '${esc(a.nombre||'esta persona')}')">✕</button>
       </div>`).join('')}`).join('')}`;
 
+  const cRec = (() => {
+    const prods = Object.keys(RECETAS).map(pid => item(pid)).filter(Boolean);
+    if (!recSel || !RECETAS[recSel]) recSel = prods[0] ? prods[0].id : null;
+    const rec = recSel ? RECETAS[recSel] : null;
+    const prod = recSel ? item(recSel) : null;
+    const dlIns = `<datalist id="dl-rec-ins">${CAT.filter(i => !esMulti(i) && i.id !== recSel).map(i => `<option value="${esc(i.nombre)}">`).join('')}</datalist>`;
+    return `<div class="fbody">
+      <label class="flbl">Producto</label>
+      <select onchange="recSel=this.value;render()">${prods.map(p => `<option value="${p.id}" ${p.id===recSel?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select>
+      ${rec ? `
+      <label class="flbl">Un lote rinde (en ${esc(prod.unidad)})</label>
+      <input type="number" inputmode="decimal" value="${rec.rendimiento}" onfocus="this.select()" onchange="setRendimiento('${recSel}', this.value)">
+      <div class="seccion" style="margin:6px 0 4px">Ingredientes por lote</div>
+      ${rec.lineas.map(l => { const li = item(l.insumo_id); if (!li) return '';
+        return `<div class="linea" style="padding:8px 0">
+          <div class="lx"><div class="nm" style="font-size:14px">${esc(li.nombre)}</div><div class="mt">${esc(li.unidad)}</div></div>
+          <input class="cant" style="height:44px" type="number" inputmode="decimal" value="${l.cantidad}" onfocus="this.select()" onchange="setLineaCant(${l.id}, '${recSel}', this.value)">
+          <button class="okbtn" style="background:#F3E9EC;color:var(--muted);height:44px" onclick="quitarLinea(${l.id}, '${recSel}')">✕</button>
+        </div>`; }).join('') || '<div class="mt" style="margin-bottom:8px">Sin ingredientes todavía — agrégalos abajo.</div>'}
+      ${dlIns}
+      <div class="linea" style="padding:10px 0;border-top:1px dashed var(--line2)">
+        <input type="text" id="re-ins" list="dl-rec-ins" placeholder="Agregar ingrediente…" style="flex:1;margin-bottom:0">
+        <input class="cant" style="height:44px;width:70px" type="number" inputmode="decimal" id="re-cant" placeholder="cant.">
+        <button class="okbtn" style="height:44px" onclick="agregarLinea('${recSel}')">✓</button>
+      </div>` : ''}
+      <div class="linea" style="padding:10px 0;border-top:1px solid var(--line)">
+        <input type="text" id="re-nuevo" list="dl-rec-ins" placeholder="Hacer receta para otro insumo…" style="flex:1;margin-bottom:0">
+        <button class="okbtn" style="height:44px" onclick="crearReceta()">➕</button>
+      </div>
+    </div>`;
+  })();
   return `<h2 class="page">Ajustes</h2>
   <p class="sub">Toca una sección para abrirla.</p>
+  ${sec('rec', '🥣 Recetas', Object.keys(RECETAS).length, cRec)}
   ${sec('ins', '➕ Nuevo insumo', '', cIns)}
   ${veCostos() ? sec('cos', '💰 Costos', qCost ? listaCos.length + ' resultados' : 'solo tú', cCos) : ''}
   ${sec('eq', '👥 Equipo y PINs', EQUIPO.length, cEq)}`;
