@@ -106,6 +106,8 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 .linea .cant{width:74px;height:46px;font-size:17px}
 .linea .cant.hecha{border-color:#BFE3CE;color:var(--leaf);background:#F8FCF9}
 .uni{font-size:10.5px;color:var(--muted);font-weight:700;flex:none;max-width:56px}
+button.bhead.acc{width:100%;justify-content:flex-start;border:none;font-family:inherit;font-size:inherit}
+.bhead .flecha{font-size:14px;color:#C8B3B8;margin-left:2px}
 .gsuc{background:var(--cream);padding:8px 14px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--line)}
 .bfoot{padding:12px 14px;background:#FFFBFA;border-top:1px solid var(--line);display:flex;gap:8px}
 .btn{background:var(--fresa);color:#fff;border-radius:12px;padding:13px 16px;font-weight:700;font-size:14px;box-shadow:0 4px 14px -6px rgba(232,41,75,.5)}
@@ -142,7 +144,7 @@ p.sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin-bottom:14px;ma
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v15</b></div>
+    <div class="sublog">Control de inventarios · <b>v16</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -914,17 +916,22 @@ function vCompra(){
 }
 
 /* — DIRECCIÓN: ajustes (insumos y equipo) — */
+let ajSec = null;
 function vAjustes(){
   const catsExist = cats();
   const provs = [...new Set(CAT.map(i => i.proveedor).filter(Boolean))];
   const porSuc = {};
   EQUIPO.forEach(a => { (porSuc[a.sucursal]=porSuc[a.sucursal]||[]).push(a); });
-  return `<h2 class="page">Ajustes</h2>
-  <p class="sub">Da de alta insumos nuevos y crea el acceso de cada persona con su nombre — así sabes exactamente quién pide, quién recibe y quién cuenta.</p>
 
+  const sec = (id, titulo, extra, contenido) => `
   <div class="bloque">
-    <div class="bhead"><b>➕ Nuevo insumo</b></div>
-    <div class="fbody">
+    <button class="bhead acc" onclick="ajSec = ajSec==='${id}' ? null : '${id}'; render()">
+      <b>${titulo}</b><span class="mono">${extra}</span><span class="flecha">${ajSec===id?'▾':'▸'}</span>
+    </button>
+    ${ajSec===id ? contenido : ''}
+  </div>`;
+
+  const cIns = `<div class="fbody">
       <label class="flbl">Nombre</label>
       <input type="text" id="ni-nombre" placeholder="Ej. Salsa de fresa">
       <div class="fgrid">
@@ -945,16 +952,14 @@ function vAjustes(){
       </div>
       <label class="chk2"><input type="checkbox" id="ni-frac"> Se cuenta con decimales (se pesa: kg, litros)</label>
       <button class="btn wide" onclick="crearInsumo()">Crear insumo</button>
-    </div>
-  </div>
+    </div>`;
 
-  ${veCostos() ? `  <div class="bloque">
-    <div class="bhead"><b>💰 Costos</b><span class="mono">solo tú los ves</span></div>
-    <div class="fbody" style="padding-bottom:6px">
+  const listaCos = CAT.filter(i => qCost ? i.nombre.toLowerCase().includes(qCost.toLowerCase()) : (Number(i.consumo_mes)>0 || i.diario));
+  const cCos = `<div class="fbody" style="padding-bottom:6px">
       <input type="text" placeholder="Buscar insumo…" value="${esc(qCost)}" style="margin-bottom:4px"
         oninput="qCost=this.value;render();const els=[...document.querySelectorAll('input')];const el=els.find(x=>x.placeholder==='Buscar insumo…');el.focus();el.setSelectionRange(el.value.length,el.value.length)">
     </div>
-    ${CAT.filter(i => qCost ? i.nombre.toLowerCase().includes(qCost.toLowerCase()) : (Number(i.consumo_mes)>0 || i.diario)).map(i => {
+    ${listaCos.map(i => {
       const f = Math.max(1, Number(i.factor)||1);
       const val = i.costo ? Math.round(costoEmp(i)*100)/100 : '';
       return `<div class="linea">
@@ -962,12 +967,9 @@ function vAjustes(){
           <div class="mt">costo por <b>${esc(i.empaque || i.unidad)}</b>${f>1 ? ` (${f} ${esc(i.unidad)})` : ''}${i.costo ? ` · ≈ ${money(i.costo)} por ${esc(i.unidad)}` : ''}</div></div>
         <input class="cant" type="number" inputmode="decimal" value="${val}" placeholder="$" onfocus="this.select()" onchange="guardarCosto('${i.id}', this.value)">
       </div>`;
-    }).join('')}
-  </div>` : ''}
+    }).join('')}`;
 
-  <div class="bloque">
-    <div class="bhead"><b>👥 Equipo y PINs</b><span class="mono">${EQUIPO.length}</span></div>
-    <div class="fbody">
+  const cEq = `<div class="fbody">
       <div class="fgrid">
         <div><label class="flbl">Sucursal</label>
           <select id="eq-suc">${Object.keys(LOCS).map(l=>`<option value="${l}">${LOCS[l].n}</option>`).join('')}</select></div>
@@ -985,8 +987,13 @@ function vAjustes(){
         <div class="lx"><div class="nm">${esc(a.nombre || 'Sin nombre')}</div>
           <div class="mt">PIN ${esc(String(a.pin))} · ${a.rol === 'direccion' ? 'dirección' : 'tienda'}${a.ve_costos ? ' · 💰 ve costos' : ''}</div></div>
         <button class="okbtn" style="background:#F3E9EC;color:var(--muted)" onclick="borrarAcceso(${a.id}, '${esc(a.nombre||'esta persona')}')">✕</button>
-      </div>`).join('')}`).join('')}
-  </div>`;
+      </div>`).join('')}`).join('')}`;
+
+  return `<h2 class="page">Ajustes</h2>
+  <p class="sub">Toca una sección para abrirla.</p>
+  ${sec('ins', '➕ Nuevo insumo', '', cIns)}
+  ${veCostos() ? sec('cos', '💰 Costos', qCost ? listaCos.length + ' resultados' : 'solo tú', cCos) : ''}
+  ${sec('eq', '👥 Equipo y PINs', EQUIPO.length, cEq)}`;
 }
 
 /* ===== Render ===== */
