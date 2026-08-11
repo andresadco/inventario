@@ -144,7 +144,7 @@ button.bhead.acc{width:100%;justify-content:flex-start;border:none;font-family:i
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v18</b></div>
+    <div class="sublog">Control de inventarios · <b>v20</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -316,11 +316,13 @@ async function contar(loc, id, val){
   render();
 }
 async function contarCajas(loc, id){
+  const i = item(id);
   const dg = {};
   cajasDe(id).forEach(p => { const v = Math.max(0, Math.round(Number(document.getElementById(`cj-${loc}-${id}-${p.id}`)?.value)||0)); if (v>0) dg[p.id]=v; });
-  const { error } = await db.rpc('lfi_ajustar_cajas', {p_suc:loc, p_insumo:id, p_desglose:dg, p_por:quien()});
+  const fn = i && i.suma_piezas ? 'lfi_ajustar_desglose' : 'lfi_ajustar_cajas';
+  const { error } = await db.rpc(fn, {p_suc:loc, p_insumo:id, p_desglose:dg, p_por:quien()});
   if (error){ toast('No se guardó.'); return; }
-  toast('🍓 Fresa guardada');
+  toast('✓ ' + esc(i ? i.nombre : '') + ' guardado');
   await cargar(); render();
 }
 /* La tienda avisa: "ya no tengo esto, mándame tanto" */
@@ -464,6 +466,23 @@ async function registrarEntrada(){
   });
   await cargar(); render();
 }
+async function registrarSalida(){
+  const i = insumoPorNombre(document.getElementById('sa-ins')?.value);
+  if (!i){ toast('Elige un insumo de la lista.'); return; }
+  const v = limpia(i, document.getElementById('sa-cant')?.value);
+  if (v <= 0){ toast('Pon la cantidad que sale.'); return; }
+  const loc = document.getElementById('sa-loc').value;
+  const motivo = (document.getElementById('sa-motivo')?.value || '').trim() || 'Uso';
+  const disp = stock(loc, i.id);
+  const { error } = await db.rpc('lfi_mover', {p_suc:loc, p_insumo:i.id, p_delta:-v, p_tipo:'salida', p_nota:'Salida: ' + motivo, p_por:quien()});
+  if (error){ toast('No se pudo registrar.'); return; }
+  formInv = null;
+  toastAccion(disp < v ? `✓ Salió (solo había ${fmtCant(i,disp)})` : `📤 Salieron ${fmtCant(i,v)} ${esc(i.unidad)} de ${esc(i.nombre)} (${esc(motivo)})`, 'Deshacer', async () => {
+    await db.rpc('lfi_mover', {p_suc:loc, p_insumo:i.id, p_delta:v, p_tipo:'ajuste', p_nota:'Deshecho: salida', p_por:quien()});
+    toast('↩︎ Salida deshecha'); await cargar(); render();
+  });
+  await cargar(); render();
+}
 async function transferirMerc(){
   const i = insumoPorNombre(document.getElementById('tr-ins')?.value);
   if (!i){ toast('Elige un insumo de la lista.'); return; }
@@ -490,6 +509,7 @@ function formsInventario(fijo){
   const locsA = fijo ? Object.keys(LOCS).filter(l => l !== fijo) : Object.keys(LOCS);
   const botones = `<div class="expbar2">
     <button class="btn ${formInv==='ent'?'':'ghost'}" onclick="formInv = formInv==='ent' ? null : 'ent'; render()">📥 Entrada</button>
+    <button class="btn ${formInv==='sal'?'':'ghost'}" onclick="formInv = formInv==='sal' ? null : 'sal'; render()">📤 Salida</button>
     <button class="btn ${formInv==='tra'?'':'ghost'}" onclick="formInv = formInv==='tra' ? null : 'tra'; render()">🔄 Transferir</button>
     ${!fijo ? `<button class="btn ${formInv==='pro'?'':'ghost'}" onclick="formInv = formInv==='pro' ? null : 'pro'; render()">🥣 Producir</button>` : ''}
   </div>`;
@@ -503,6 +523,18 @@ function formsInventario(fijo){
     <label class="flbl">Nota (proveedor, motivo…)</label>
     <input type="text" id="en-nota" placeholder="opcional">
     <button class="btn wide" onclick="registrarEntrada()">✓ Registrar entrada</button>
+  </div></div>`;
+  if (formInv === 'sal') return botones + dl + `<div class="bloque"><div class="fbody">
+    <label class="flbl">¿Qué sale?</label>
+    <input type="text" id="sa-ins" list="dl-ins" placeholder="Escribe el insumo…">
+    <div class="fgrid">
+      <div><label class="flbl">Cantidad</label><input type="number" inputmode="decimal" id="sa-cant" placeholder="0"></div>
+      <div><label class="flbl">¿De dónde?</label><select id="sa-loc">${locsEntrada.map(l => `<option value="${l}" ${l===(fijo||'centro')?'selected':''}>${LOCS[l].n}</option>`).join('')}</select></div>
+    </div>
+    <label class="flbl">¿Para qué? (motivo)</label>
+    <input type="text" id="sa-motivo" list="dl-motivos" placeholder="Producción, merma, se usó…">
+    <datalist id="dl-motivos"><option value="Producción"><option value="Se usó en tienda"><option value="Merma / se echó a perder"><option value="Caducó"><option value="Se rompió"><option value="Degustación / cortesía"></datalist>
+    <button class="btn wide" onclick="registrarSalida()">✓ Registrar salida</button>
   </div></div>`;
   if (formInv === 'tra') return botones + dl + `<div class="bloque"><div class="fbody">
     <label class="flbl">¿Qué se mueve?</label>
@@ -752,7 +784,7 @@ function vTienda(){
     if (esMulti(i)){
       const dg = desgloseDe(loc, i.id);
       html += `<div class="fila">
-        <div class="fx"><div class="nm">${esc(i.nombre)} 🍓</div><div class="mt">cajas que tienes · guarda con ✓</div></div>
+        <div class="fx"><div class="nm">${esc(i.nombre)}${i.diario ? ' 🍓' : ''}</div><div class="mt">${i.suma_piezas ? 'paquetes cerrados y sueltas' : 'cajas que tienes'} · guarda con ✓</div></div>
         <div class="cajitas">
           ${cajasDe(i.id).map(p => `<div class="cj"><label>${esc(p.nombre.replace('Caja ',''))}</label>
             <input class="cant" type="number" inputmode="numeric" id="cj-${loc}-${i.id}-${p.id}" value="${dg[p.id]||''}" placeholder="0" onfocus="this.select()"></div>`).join('')}
@@ -859,11 +891,11 @@ function vExcel(){
       : `<span class="dias verde">${d} días</span>`;
     if (esMulti(i)){
       html += `<div class="xr">
-        <div class="top"><div class="nm">${esc(i.nombre)} 🍓</div>
-          <span class="tot">${posTotal(i.id)} <span class="u">cajas</span></span></div>
+        <div class="top"><div class="nm">${esc(i.nombre)}${i.diario ? ' 🍓' : ''}</div>
+          <span class="tot">${fmtCant(i, posTotal(i.id))} <span class="u">${i.suma_piezas ? esc(i.unidad) + 's' : 'cajas'}</span></span></div>
         <div class="xg">${ORDEN_LOCS.map(l => `<div class="c"><label>${LOCS[l].mini}</label>
-          <input value="${stockCajas(l,i.id)} cj" disabled></div>`).join('')}</div>
-        <div class="mt" style="font-size:11px;color:var(--faint);margin-top:6px">La fresa se cuenta por cajas en cada tienda</div>
+          <input value="${fmtCant(i, stock(l,i.id))}" disabled></div>`).join('')}</div>
+        <div class="mt" style="font-size:11px;color:var(--faint);margin-top:6px">${i.suma_piezas ? 'Se cuenta por paquetes y sueltas en cada punto' : 'La fresa se cuenta por cajas en cada tienda'}</div>
       </div>`;
       continue;
     }
