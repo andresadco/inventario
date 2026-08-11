@@ -144,7 +144,7 @@ button.bhead.acc{width:100%;justify-content:flex-start;border:none;font-family:i
 <div id="login">
   <div class="loginbox">
     <div class="big">🍓 Lady <em>Fresa</em></div>
-    <div class="sublog">Control de inventarios · <b>v20</b></div>
+    <div class="sublog">Control de inventarios · <b>v21</b></div>
     <div class="card">
       <span class="lbl">¿Dónde estás?</span>
       <select id="lg-suc"></select>
@@ -273,7 +273,7 @@ async function cargar(){
   SOLIC = sol.data || [];
   EQUIPO = acc.data || [];
   RECETAS = {};
-  (rec.data||[]).forEach(r => { RECETAS[r.producto_id] = {rendimiento: Number(r.rendimiento)||1, lineas: []}; });
+  (rec.data||[]).forEach(r => { RECETAS[r.producto_id] = {rendimiento: Number(r.rendimiento)||1, privada: !!r.privada, lineas: []}; });
   (recl.data||[]).forEach(l => { if (RECETAS[l.producto_id]) RECETAS[l.producto_id].lineas.push(l); });
 }
 
@@ -548,8 +548,8 @@ function formsInventario(fijo){
     <button class="btn wide" onclick="transferirMerc()">✓ Transferir</button>
   </div></div>`;
   if (formInv === 'pro'){
-    const prods = Object.keys(RECETAS).map(pid => item(pid)).filter(Boolean);
-    if (!prodSel || !RECETAS[prodSel]) prodSel = prods[0] ? prods[0].id : null;
+    const prods = Object.keys(RECETAS).filter(recetaVisible).map(pid => item(pid)).filter(Boolean);
+    if (!prodSel || !RECETAS[prodSel] || !recetaVisible(prodSel)) prodSel = prods[0] ? prods[0].id : null;
     const rec = prodSel ? RECETAS[prodSel] : null;
     const prod = prodSel ? item(prodSel) : null;
     const lotes = Math.round((Number(document.getElementById('pr-lotes')?.value) || 1)*100)/100 || 1;
@@ -578,6 +578,13 @@ function formsInventario(fijo){
 }
 
 /* Producción: la receta descuenta ingredientes y da de alta el producto */
+const recetaVisible = pid => RECETAS[pid] && (!RECETAS[pid].privada || veCostos());
+async function setPrivada(pid, val){
+  await db.from('lfi_recetas').update({privada: !!val}).eq('producto_id', pid);
+  RECETAS[pid].privada = !!val;
+  toast(val ? '🔒 Receta privada: solo tú la ves' : '🔓 Receta visible para dirección');
+  render();
+}
 function costoReceta(pid){
   const r = RECETAS[pid]; if (!r) return 0;
   return r.lineas.reduce((a,l) => a + Number(l.cantidad) * (Number(item(l.insumo_id)?.costo)||0), 0);
@@ -1132,8 +1139,8 @@ function vAjustes(){
       </div>`).join('')}`).join('')}`;
 
   const cRec = (() => {
-    const prods = Object.keys(RECETAS).map(pid => item(pid)).filter(Boolean);
-    if (!recSel || !RECETAS[recSel]) recSel = prods[0] ? prods[0].id : null;
+    const prods = Object.keys(RECETAS).filter(recetaVisible).map(pid => item(pid)).filter(Boolean);
+    if (!recSel || !RECETAS[recSel] || !recetaVisible(recSel)) recSel = prods[0] ? prods[0].id : null;
     const rec = recSel ? RECETAS[recSel] : null;
     const prod = recSel ? item(recSel) : null;
     const dlIns = `<datalist id="dl-rec-ins">${CAT.filter(i => !esMulti(i) && i.id !== recSel).map(i => `<option value="${esc(i.nombre)}">`).join('')}</datalist>`;
@@ -1141,6 +1148,7 @@ function vAjustes(){
       <label class="flbl">Producto</label>
       <select onchange="recSel=this.value;render()">${prods.map(p => `<option value="${p.id}" ${p.id===recSel?'selected':''}>${esc(p.nombre)}</option>`).join('')}</select>
       ${rec ? `
+      ${veCostos() ? `<label class="chk2" style="margin-top:2px"><input type="checkbox" ${rec.privada?'checked':''} onchange="setPrivada('${recSel}', this.checked)"> 🔒 Receta privada (solo la ves tú)</label>` : ''}
       <label class="flbl">Un lote rinde (en ${esc(prod.unidad)})</label>
       <input type="number" inputmode="decimal" value="${rec.rendimiento}" onfocus="this.select()" onchange="setRendimiento('${recSel}', this.value)">
       <div class="seccion" style="margin:6px 0 4px">Ingredientes por lote</div>
@@ -1164,7 +1172,7 @@ function vAjustes(){
   })();
   return `<h2 class="page">Ajustes</h2>
   <p class="sub">Toca una sección para abrirla.</p>
-  ${sec('rec', '🥣 Recetas', Object.keys(RECETAS).length, cRec)}
+  ${sec('rec', '🥣 Recetas', Object.keys(RECETAS).filter(recetaVisible).length, cRec)}
   ${sec('ins', '➕ Nuevo insumo', '', cIns)}
   ${veCostos() ? sec('cos', '💰 Costos', qCost ? listaCos.length + ' resultados' : 'solo tú', cCos) : ''}
   ${sec('eq', '👥 Equipo y PINs', EQUIPO.length, cEq)}`;
