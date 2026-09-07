@@ -272,6 +272,7 @@ async function cargar(){
   (prs.data||[]).forEach(p => { (PRES[p.insumo_id]=PRES[p.insumo_id]||[]).push(p); });
   SOLIC = sol.data || [];
   EQUIPO = acc.data || [];
+  RECIB = null;   // se vuelve a leer el recibido del mes
   RECETAS = {};
   (rec.data||[]).forEach(r => { RECETAS[r.producto_id] = {rendimiento: Number(r.rendimiento)||1, privada: !!r.privada, lineas: []}; });
   (recl.data||[]).forEach(l => { if (RECETAS[l.producto_id]) RECETAS[l.producto_id].lineas.push(l); });
@@ -740,6 +741,130 @@ async function exportarSolic(offset){
 }
 function copiar(txt){ navigator.clipboard?.writeText(txt).then(()=>toast('Copiado. Pégalo en WhatsApp.')).catch(()=>toast('No se pudo copiar.')); }
 
+/* ===== Recibido del mes (entradas reales de mercancía) ===== */
+/* Solo cuenta lo que ENTRA de fuera: compras/entradas de proveedor y producción propia.
+   Los traspasos entre bodega y tiendas NO cuentan (esa mercancía ya se había recibido antes). */
+let RECIB = null, recibOff = 0, recibCargando = false;
+/* Se cuenta solo lo que entra de fuera. Lista blanca: cualquier otra nota
+   (traspasos, "Enviado del comisariato", "Llegó del comisariato", deshechos) queda fuera. */
+const RECIB_PROV = /^(Entrada de mercancía|Compra del mes)/i;
+const esProduccion = n => /^Producci[oó]n/i.test(n || '');
+const esRecibido  = n => RECIB_PROV.test(n || '') || esProduccion(n);
+
+function mesRango(off){
+  const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); d.setMonth(d.getMonth() - (off||0));
+  const f = new Date(d); f.setMonth(f.getMonth() + 1);
+  return {ini: d, fin: f, etq: d.toLocaleDateString('es-MX', {month:'long', year:'numeric'})};
+}
+const fechaCorta = s => new Date(s).toLocaleDateString('es-MX', {day:'2-digit', month:'short'});
+
+async function cargarRecibido(off){
+  if (recibCargando) return;
+  recibCargando = true; recibOff = off || 0;
+  const {ini, fin} = mesRango(recibOff);
+  const { data, error } = await db.from('lfi_movimientos')
+    .select('created_at,sucursal,insumo_id,delta,tipo,nota,por')
+    .eq('tipo', 'entrada')
+    .gte('created_at', ini.toISOString()).lt('created_at', fin.toISOString())
+    .order('created_at').limit(3000);
+  recibCargando = false;
+  if (error){ RECIB = []; toast('No se pudo leer el registro de entradas.'); render(); return; }
+  RECIB = (data || []).filter(m => esRecibido(m.nota));
+  render();
+}
+function recibVerMes(off){ RECIB = null; cargarRecibido(off); render(); }
+
+/* Agrupa por insumo: {i, prov, prod, total, movs[]} */
+function recibAgrupado(){
+  const g = {};
+  (RECIB || []).forEach(m => {
+    const i = item(m.insumo_id); if (!i) return;
+    const k = m.insumo_id;
+    g[k] = g[k] || {i, prov:0, prod:0, total:0, movs:[]};
+    const v = Number(m.delta) || 0;
+    g[k].total += v;
+    if (esProduccion(m.nota)) g[k].prod += v; else g[k].prov += v;
+    g[k].movs.push(m);
+  });
+  return Object.values(g)
+    .map(x => { x.total = Math.round(x.total*1000)/1000; x.prov = Math.round(x.prov*1000)/1000; x.prod = Math.round(x.prod*1000)/1000; return x; })
+    .sort((a,b) => a.i.nombre.localeCompare(b.i.nombre, 'es'));
+}
+
+function vRecibido(){
+  if (RECIB === null){
+    if (!recibCargando) setTimeout(() => cargarRecibido(recibOff), 0);
+    return `<div class="bloque" style="margin-bottom:10px">
+      <div class="bhead"><b>📥 Recibido del mes</b></div>
+      <div class="empty" style="padding:18px">Leyendo el registro de entradas…</div>
+    </div>`;
+  }
+  const {etq} = mesRango(recibOff);
+  const gs = recibAgrupado();
+  const nLineas = (RECIB || []).length;
+  const valor = veCostos() ? gs.reduce((a,x) => a + x.total * (Number(x.i.costo)||0), 0) : 0;
+
+  const cuerpo = gs.map(x => {
+    const det = x.movs.map(m =>
+      `${fechaCorta(m.created_at)} ${fmtCant(x.i, Number(m.delta))}${m.sucursal !== 'centro' ? ' → ' + (LOCS[m.sucursal] ? LOCS[m.sucursal].mini : m.sucursal) : ''}`
+    ).join(' · ');
+    return `<div class="linea">
+      <div class="lx"><div class="nm">${esc(x.i.nombre)}${x.prod ? ' 🥣' : ''}</div>
+        <div class="mt">${esc(det)}${x.prod && x.prov ? ` · (proveedor ${fmtCant(x.i,x.prov)} + producción ${fmtCant(x.i,x.prod)})` : ''}</div></div>
+      <span class="tot">${fmtCant(x.i, x.total)} <span class="u">${esc(x.i.unidad)}</span></span>
+    </div>`;
+  }).join('');
+
+  return `<div class="bloque" style="margin-bottom:10px">
+    <div class="bhead"><b>📥 Recibido del mes</b><span class="mono">${esc(etq)} · ${gs.length} insumos${valor ? ' · ' + money(valor) : ''}</span></div>
+    ${cuerpo || '<div class="empty" style="padding:18px">Sin entradas de mercancía en este mes.</div>'}
+    <div class="bfoot">
+      <button class="btn ghost" onclick="recibVerMes(0)"${recibOff===0?' disabled':''}>Este mes</button>
+      <button class="btn ghost" onclick="recibVerMes(1)"${recibOff===1?' disabled':''}>Mes anterior</button>
+      <button class="btn ghost" onclick="exportarRecibido()">⬇︎ Exportar</button>
+      <button class="btn ghost" onclick="copiarRecibido()">📋 Copiar</button>
+    </div>
+    <div class="mt" style="font-size:11px;color:var(--faint);padding:0 14px 12px">
+      Cuenta lo que entró de fuera (proveedor) y lo producido en bodega 🥣. Los traspasos de bodega a tienda no se cuentan aquí: esa mercancía ya se había recibido. ${nLineas} movimiento${nLineas!==1?'s':''} en total.
+    </div>
+  </div>`;
+}
+
+function exportarRecibido(){
+  if (!RECIB || !RECIB.length){ toast('No hay entradas en ese mes.'); return; }
+  const {ini} = mesRango(recibOff);
+  const esc2 = x => '"' + String(x ?? '').replace(/"/g,'""') + '"';
+  const filas = [['Fecha','Insumo','Unidad','Cantidad','Ubicación','Origen','Quién','Nota'].join(',')];
+  RECIB.forEach(m => {
+    const i = item(m.insumo_id); if (!i) return;
+    filas.push([
+      new Date(m.created_at).toLocaleDateString('en-CA'),
+      esc2(i.nombre), esc2(i.unidad), Number(m.delta),
+      esc2(LOCS[m.sucursal] ? LOCS[m.sucursal].short : m.sucursal),
+      esProduccion(m.nota) ? 'Producción' : 'Proveedor',
+      esc2(m.por), esc2(m.nota),
+    ].join(','));
+  });
+  filas.push('');
+  filas.push(['RESUMEN POR INSUMO','','','','','','',''].join(','));
+  filas.push(['Insumo','Unidad','Total recibido','De proveedor','Producción','','',''].join(','));
+  recibAgrupado().forEach(x => {
+    filas.push([esc2(x.i.nombre), esc2(x.i.unidad), x.total, x.prov, x.prod, '', '', ''].join(','));
+  });
+  descargar('recibido_' + ini.toISOString().slice(0,7), filas.join('\n'));
+  toast('⬇︎ Exportado. Ábrelo en Excel.');
+}
+
+function copiarRecibido(){
+  const gs = recibAgrupado();
+  if (!gs.length){ toast('No hay entradas en ese mes.'); return; }
+  const {etq} = mesRango(recibOff);
+  const L = [`🍓 *Lady Fresa* — recibido en ${etq}`, ''];
+  gs.forEach(x => L.push(`• ${x.i.nombre}: *${fmtCant(x.i, x.total)} ${x.i.unidad}*${x.prod ? ' (🥣 ' + fmtCant(x.i,x.prod) + ' producidos)' : ''}`));
+  L.push('', '¿Nos cuadra con lo que entregaste?');
+  copiar(L.join('\n'));
+}
+
 /* ===== Compra del mes ===== */
 function compraMes(){
   return CAT.map(i => {
@@ -918,6 +1043,7 @@ function vExcel(){
   return `<h2 class="page">Inventario</h2>
   <p class="sub">Tu tabla de siempre, pero viva: lo que cuentan las tiendas aparece aquí solo. El chip te dice <b>cuántos días te alcanza</b> con el consumo real. Puedes corregir cualquier número.</p>
   ${formsInventario(null)}
+  ${vRecibido()}
   ${(() => {
     if (!veCostos()) return '';
     const conCosto = CAT.some(i => Number(i.costo) > 0);
