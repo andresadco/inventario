@@ -744,7 +744,7 @@ function copiar(txt){ navigator.clipboard?.writeText(txt).then(()=>toast('Copiad
 /* ===== Recibido del mes (entradas reales de mercancía) ===== */
 /* Solo cuenta lo que ENTRA de fuera: compras/entradas de proveedor y producción propia.
    Los traspasos entre bodega y tiendas NO cuentan (esa mercancía ya se había recibido antes). */
-let RECIB = null, recibOff = 0, recibCargando = false;
+let RECIB = null, recibOff = 0, recibCargando = false, recibAbierto = false;
 /* Se cuenta solo lo que entra de fuera. Lista blanca: cualquier otra nota
    (traspasos, "Enviado del comisariato", "Llegó del comisariato", deshechos) queda fuera. */
 const RECIB_PROV = /^(Entrada de mercancía|Compra del mes)/i;
@@ -772,7 +772,7 @@ async function cargarRecibido(off){
   RECIB = (data || []).filter(m => esRecibido(m.nota));
   render();
 }
-function recibVerMes(off){ RECIB = null; cargarRecibido(off); render(); }
+function recibVerMes(off){ RECIB = null; recibAbierto = true; cargarRecibido(off); render(); }
 
 /* Agrupa por insumo: {i, prov, prod, total, movs[]} */
 function recibAgrupado(){
@@ -795,8 +795,9 @@ function vRecibido(){
   if (RECIB === null){
     if (!recibCargando) setTimeout(() => cargarRecibido(recibOff), 0);
     return `<div class="bloque" style="margin-bottom:10px">
-      <div class="bhead"><b>📥 Recibido del mes</b></div>
-      <div class="empty" style="padding:18px">Leyendo el registro de entradas…</div>
+      <button class="bhead acc" onclick="recibAbierto=!recibAbierto;render()">
+        <b>📥 Recibido del mes</b><span class="mono">leyendo…</span><span class="flecha">${recibAbierto?'▾':'▸'}</span>
+      </button>
     </div>`;
   }
   const {etq} = mesRango(recibOff);
@@ -815,8 +816,12 @@ function vRecibido(){
     </div>`;
   }).join('');
 
+  const cabeza = `<button class="bhead acc" onclick="recibAbierto=!recibAbierto;render()">
+      <b>📥 Recibido del mes</b><span class="mono">${esc(etq)} · ${gs.length} insumos${valor ? ' · ' + money(valor) : ''}</span><span class="flecha">${recibAbierto?'▾':'▸'}</span>
+    </button>`;
+  if (!recibAbierto) return `<div class="bloque" style="margin-bottom:10px">${cabeza}</div>`;
   return `<div class="bloque" style="margin-bottom:10px">
-    <div class="bhead"><b>📥 Recibido del mes</b><span class="mono">${esc(etq)} · ${gs.length} insumos${valor ? ' · ' + money(valor) : ''}</span></div>
+    ${cabeza}
     ${cuerpo || '<div class="empty" style="padding:18px">Sin entradas de mercancía en este mes.</div>'}
     <div class="bfoot">
       <button class="btn ghost" onclick="recibVerMes(0)"${recibOff===0?' disabled':''}>Este mes</button>
