@@ -220,9 +220,23 @@ const LOCS = {
   moctezuma: {n:'Tienda Moctezuma', short:'Moctezuma', mini:'MOC'},
   narvarte:  {n:'Tienda Narvarte', short:'Narvarte', mini:'NAR'},
   balbuena:  {n:'Tienda Balbuena', short:'Balbuena', mini:'BAL'},
+  condesa:   {n:'Tienda Condesa', short:'Condesa', mini:'CON', g2:true},
 };
+/* ORDEN_LOCS = solo Groventia 1: los totales, la cobertura y la compra del mes no cuentan las tiendas de Groventia Group */
 const ORDEN_LOCS = ['moctezuma','narvarte','balbuena','centro'];
-const TIENDAS_ORD = ['moctezuma','narvarte','balbuena','centro'];
+const TIENDAS_ORD = ['moctezuma','narvarte','balbuena','condesa','centro'];
+/* ===== Groventia Group (tiendas con inversionistas) =====
+   Compran directo a proveedor; Groventia 1 solo les vende lo que produce (cremas y crumbles). */
+const esG2 = l => !!(LOCS[l] && LOCS[l].g2);
+const G2_LOCS = Object.keys(LOCS).filter(l => LOCS[l].g2);
+const tieneMargenG2 = i => i && i.margen_g2 !== null && i.margen_g2 !== undefined && i.margen_g2 !== '';
+function precioG2(i){
+  if (!i) return null;
+  if (Number(i.precio_g2) > 0) return Number(i.precio_g2);
+  if (tieneMargenG2(i) && Number(i.costo) > 0) return Math.round(Number(i.costo) * (1 + Number(i.margen_g2)/100) * 100) / 100;
+  return null;
+}
+const vendibleG2 = i => !!(i && (RECETAS[i.id] || Number(i.precio_g2) > 0 || tieneMargenG2(i)));
 const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hoy = () => new Date().toISOString().slice(0,10);
 
@@ -355,6 +369,8 @@ async function enviarSolic(sid){
   const i = item(s.insumo_id);
   const v = limpia(i, document.getElementById('env-'+sid)?.value);
   if (v <= 0){ toast('Pon cuánto le mandas.'); return; }
+  if (esG2(s.sucursal) && precioG2(i) === null &&
+      !confirm(`${i.nombre} no está en la lista de precios de Groventia Group (eso lo compran directo a su proveedor). ¿Se lo mandas de todos modos? Se le cobraría a costo.`)) return;
   const disp = stock('centro', s.insumo_id);
   const r1 = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:s.insumo_id, p_delta:-v, p_tipo:'salida', p_nota:'Pedido enviado a '+LOCS[s.sucursal].short, p_por:quien()});
   if (r1.error){ toast('No se pudo registrar el envío.'); return; }
@@ -507,11 +523,13 @@ function formsInventario(fijo){
   const dl = `<datalist id="dl-ins">${CAT.filter(i => !esMulti(i)).map(i => `<option value="${esc(i.nombre)}">`).join('')}</datalist>`;
   const locsEntrada = fijo ? [fijo] : Object.keys(LOCS);
   const locsDe = fijo ? [fijo] : Object.keys(LOCS);
-  const locsA = fijo ? Object.keys(LOCS).filter(l => l !== fijo) : Object.keys(LOCS);
+  const locsA = fijo ? Object.keys(LOCS).filter(l => l !== fijo && esG2(l) === esG2(fijo)) : Object.keys(LOCS);
+  const sinTra = !!fijo && locsA.length === 0;   // tienda de Groventia Group sin otra tienda hermana
+  if (sinTra && formInv === 'tra') formInv = null;
   const botones = `<div class="expbar2">
     <button class="btn ${formInv==='ent'?'':'ghost'}" onclick="formInv = formInv==='ent' ? null : 'ent'; render()">📥 Entrada</button>
     <button class="btn ${formInv==='sal'?'':'ghost'}" onclick="formInv = formInv==='sal' ? null : 'sal'; render()">📤 Salida</button>
-    <button class="btn ${formInv==='tra'?'':'ghost'}" onclick="formInv = formInv==='tra' ? null : 'tra'; render()">🔄 Transferir</button>
+    ${sinTra ? '' : `<button class="btn ${formInv==='tra'?'':'ghost'}" onclick="formInv = formInv==='tra' ? null : 'tra'; render()">🔄 Transferir</button>`}
     ${!fijo ? `<button class="btn ${formInv==='pro'?'':'ghost'}" onclick="formInv = formInv==='pro' ? null : 'pro'; render()">🥣 Producir</button>` : ''}
   </div>`;
   if (formInv === 'ent') return botones + dl + `<div class="bloque"><div class="fbody">
@@ -769,7 +787,7 @@ async function cargarRecibido(off){
     .order('created_at').limit(3000);
   recibCargando = false;
   if (error){ RECIB = []; toast('No se pudo leer el registro de entradas.'); render(); return; }
-  RECIB = (data || []).filter(m => esRecibido(m.nota));
+  RECIB = (data || []).filter(m => esRecibido(m.nota) && !esG2(m.sucursal));
   render();
 }
 function recibVerMes(off){ RECIB = null; recibAbierto = true; cargarRecibido(off); render(); }
@@ -943,13 +961,16 @@ function vTienda(){
         ? `<div class="fcol"><label>Pedir</label><input class="cant" style="width:70px" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" id="pd-${i.id}" placeholder="¿cuánto?"
              onkeydown="if(event.key==='Enter')confirmarPedir('${loc}','${i.id}')"></div>
            <div class="fcol"><label>&nbsp;</label><button class="okbtn" onclick="confirmarPedir('${loc}','${i.id}')">✓</button></div>`
+        : (esG2(loc) && !vendibleG2(i))
+        ? `<div class="fcol"><label>&nbsp;</label><span class="mt" style="display:block;width:78px;text-align:center;font-size:11px;color:var(--faint)">tu proveedor</span></div>`
         : `<div class="fcol"><label>&nbsp;</label><button class="pedirbtn" onclick="abrirPedir('${i.id}')">🙋 Pedir</button></div>`}
     </div>`;
   }
   const nCamino = SOLIC.filter(x => x.sucursal === loc && solCamino(x)).length;
   const aviso = nCamino ? `<button class="btn ghost wide" style="margin-bottom:10px;border-color:var(--leaf);color:var(--leaf)" onclick="irTab('mis')">🚚 Tienes ${nCamino} ${nCamino===1?'pedido':'pedidos'} en camino — tócale para verlos</button>` : '';
+  const subG2 = `<p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Las <b>cremas y crumbles</b> se los pides a Andrés con <b>🙋 Pedir</b>. Todo lo demás te llega directo de tu proveedor: cuando llegue, regístralo con <b>📥 Entrada</b>.</p>`;
   return `<h2 class="page">Mi inventario</h2>
-  <p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>
+  ${esG2(loc) ? subG2 : `<p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>`}
   ${aviso}
   ${formsInventario(loc)}
   ${barra()}
@@ -1115,14 +1136,15 @@ function vPiden(){
   const porTienda = (lista, fila) => TIENDAS_ORD.map(su => {
     const xs = lista.filter(x => x.sucursal === su);
     if (!xs.length) return '';
-    return `<div class="gsuc">${esc(LOCS[su] ? LOCS[su].short : su)} · ${xs.length}</div>` + xs.map(fila).join('');
+    return `<div class="gsuc">${esc(LOCS[su] ? LOCS[su].short : su)}${esG2(su) ? ' (Groventia Group)' : ''} · ${xs.length}</div>` + xs.map(fila).join('');
   }).join('');
   return `<h2 class="page">Me piden</h2>
   <p class="sub">Al dar <b>✓ Ya se lo mandé</b> pones cuánto mandas: sale de tu bodega, entra a la tienda y queda registrado. La tienda confirma cuando le llegue.</p>
   ${pend.length ? `<div class="bloque"><div class="bhead"><b>🙋 Pendientes</b><span class="mono">${pend.length}</span></div>${porTienda(pend, filaPend)}</div>` : ''}
   ${camino.length ? `<div class="bloque"><div class="bhead" style="background:var(--leaf)"><b>🚚 En camino</b><span class="mono">${camino.length}</span></div>${porTienda(camino, filaCamino)}</div>` : ''}
   ${cerradas.length ? `<div class="bloque"><div class="bhead" style="background:#8A7178"><b>✓ Recibidos</b><span class="mono">últimos ${cerradas.length}</span></div>${cerradas.map(filaCerrada).join('')}</div>` : ''}
-  ${resumenMes()}`;
+  ${resumenMes()}
+  ${veCostos() ? vVentaG2() : ''}`;
 }
 
 /* Resumen de control del mes: todas las tiendas, con exportación */
@@ -1156,6 +1178,125 @@ function resumenMes(){
       <button class="btn ghost" onclick="exportarSolic(1)">⬇︎ Mes anterior</button>
     </div>
   </div>`;
+}
+
+/* — DIRECCIÓN: lo que Groventia 1 le vende a Groventia Group en el mes —
+   Se calcula con lo que realmente le entró a sus tiendas desde el CEDIS (envíos de pedidos,
+   transferencias y correcciones al recibir), valuado con la lista de precios de Ajustes. */
+let VG2 = null, vg2Off = 0, vg2Cargando = false, vg2Abierto = true;
+const NOTA_VENTA_G2 = /^(Enviado del comisariato|Ajuste al recibir pedido|Deshecho: envío de pedido|Deshecho: ajuste al recibir|Corrección: se des-recibió|Transferencia (de|a) |Deshecho: transferencia)/;
+function esVentaG2(m){
+  if (!esG2(m.sucursal) || !NOTA_VENTA_G2.test(m.nota || '')) return false;
+  const t = /^Transferencia (?:de|a) (.+)$/.exec(m.nota || '');
+  if (t){ const otra = Object.keys(LOCS).find(l => LOCS[l].short === t[1].trim()); if (otra && esG2(otra)) return false; }
+  return true;
+}
+async function cargarVentaG2(off){
+  if (vg2Cargando || !G2_LOCS.length) return;
+  vg2Cargando = true; vg2Off = off || 0;
+  const {ini, fin} = mesRango(vg2Off);
+  const { data, error } = await db.from('lfi_movimientos')
+    .select('created_at,sucursal,insumo_id,delta,nota,por')
+    .in('sucursal', G2_LOCS)
+    .gte('created_at', ini.toISOString()).lt('created_at', fin.toISOString())
+    .order('created_at').limit(3000);
+  vg2Cargando = false;
+  if (error){ VG2 = []; toast('No se pudo leer lo enviado a Groventia Group.'); render(); return; }
+  VG2 = (data || []).filter(esVentaG2);
+  render();
+}
+function ventaG2VerMes(off){ VG2 = null; vg2Abierto = true; cargarVentaG2(off); render(); }
+function ventaG2Agrupada(){
+  const g = {};
+  (VG2 || []).forEach(m => {
+    const i = item(m.insumo_id); if (!i) return;
+    const k = m.sucursal + '|' + m.insumo_id;
+    g[k] = g[k] || {i, suc: m.sucursal, cant: 0};
+    g[k].cant += Number(m.delta) || 0;
+  });
+  return Object.values(g).map(x => {
+    x.cant = Math.round(x.cant * 1000) / 1000;
+    const p = precioG2(x.i);
+    x.sinLista = p === null;
+    x.precio = p === null ? (Number(x.i.costo) || 0) : p;
+    x.importe = Math.round(x.cant * x.precio * 100) / 100;
+    return x;
+  }).filter(x => x.cant !== 0)
+    .sort((a,b) => a.suc.localeCompare(b.suc) || a.i.nombre.localeCompare(b.i.nombre, 'es'));
+}
+function vVentaG2(){
+  if (!G2_LOCS.length) return '';
+  if (VG2 === null){
+    if (!vg2Cargando) setTimeout(() => cargarVentaG2(vg2Off), 0);
+    return `<div class="bloque" style="margin-top:6px"><div class="bhead"><b>🧾 Venta a Groventia Group</b><span class="mono">leyendo…</span></div></div>`;
+  }
+  const {etq} = mesRango(vg2Off);
+  const xs = ventaG2Agrupada();
+  const total = xs.reduce((a,x) => a + x.importe, 0);
+  const nSin = xs.filter(x => x.sinLista).length;
+  const cabeza = `<button class="bhead acc" onclick="vg2Abierto=!vg2Abierto;render()">
+      <b>🧾 Venta a Groventia Group</b><span class="mono">${esc(etq)} · ${money(total)}</span><span class="flecha">${vg2Abierto?'▾':'▸'}</span>
+    </button>`;
+  if (!vg2Abierto) return `<div class="bloque" style="margin-top:6px">${cabeza}</div>`;
+  let suc = '';
+  const cuerpo = xs.map(x => {
+    const enc = x.suc !== suc ? `<div class="gsuc">${esc(LOCS[x.suc] ? LOCS[x.suc].short : x.suc)}</div>` : '';
+    suc = x.suc;
+    return enc + `<div class="linea">
+      <div class="lx"><div class="nm">${esc(x.i.nombre)}</div>
+        <div class="mt">${fmtCant(x.i, x.cant)} ${esc(x.i.unidad)} × ${money(x.precio)}${x.sinLista ? ' <b style="color:var(--amber)">· no está en la lista, va a costo</b>' : ''}</div></div>
+      <span class="tot">${money(x.importe)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="bloque" style="margin-top:6px">
+    ${cabeza}
+    ${cuerpo || '<div class="empty" style="padding:18px">Este mes no se le ha mandado nada a Groventia Group.</div>'}
+    ${xs.length ? `<div class="linea" style="border-top:1px solid var(--line2)"><div class="lx"><div class="nm">Total a facturar</div><div class="mt">más IVA si aplica</div></div><span class="tot">${money(total)}</span></div>` : ''}
+    <div class="bfoot">
+      <button class="btn ghost" onclick="ventaG2VerMes(0)"${vg2Off===0?' disabled':''}>Este mes</button>
+      <button class="btn ghost" onclick="ventaG2VerMes(1)"${vg2Off===1?' disabled':''}>Mes anterior</button>
+      <button class="btn ghost" onclick="exportarVentaG2()">⬇︎ Exportar</button>
+      <button class="btn ghost" onclick="copiar(textoVentaG2())">📋 Copiar</button>
+    </div>
+    <div class="mt" style="font-size:11px;color:var(--faint);padding:0 14px 12px">
+      Cuenta lo que realmente recibió cada tienda de Groventia Group desde el CEDIS, con sus correcciones. Los precios salen de ⚙️ Ajustes → Precios a Groventia Group.${nSin ? ` ${nSin} producto${nSin!==1?'s':''} sin precio en la lista se calcula${nSin!==1?'n':''} a costo.` : ''}
+    </div>
+  </div>`;
+}
+function textoVentaG2(){
+  const {etq} = mesRango(vg2Off);
+  const xs = ventaG2Agrupada();
+  const L = [`🍓 *Lady Fresa* — venta a Groventia Group (${etq})`, ''];
+  let suc = '';
+  xs.forEach(x => {
+    if (x.suc !== suc){ suc = x.suc; L.push(`*${LOCS[suc] ? LOCS[suc].short : suc}*`); }
+    L.push(`• ${x.i.nombre}: ${fmtCant(x.i, x.cant)} ${x.i.unidad} × ${money(x.precio)} = ${money(x.importe)}`);
+  });
+  L.push('', `*Total: ${money(xs.reduce((a,x) => a + x.importe, 0))}*`);
+  return L.join('\n');
+}
+function exportarVentaG2(){
+  const xs = ventaG2Agrupada();
+  if (!xs.length){ toast('No hay envíos a Groventia Group en ese mes.'); return; }
+  const {ini} = mesRango(vg2Off);
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const filas = [['Tienda','Producto','Cantidad','Unidad','Precio unitario','Importe','En lista de precios']]
+    .concat(xs.map(x => [LOCS[x.suc] ? LOCS[x.suc].short : x.suc, x.i.nombre, x.cant, x.i.unidad, x.precio, x.importe, x.sinLista ? 'No (a costo)' : 'Sí']));
+  filas.push(['','','','','Total', Math.round(xs.reduce((a,x) => a + x.importe, 0) * 100) / 100, '']);
+  descargar(`venta-groventia-group-${ini.toISOString().slice(0,7)}`, filas.map(f => f.map(q).join(',')).join('\n'));
+}
+/* Ajustes: lista de precios a Groventia Group */
+async function guardarPrecioG2(id, campo, val){
+  const i = item(id); if (!i) return;
+  const v = String(val).trim() === '' ? null : Math.max(0, Number(val) || 0);
+  const cambio = campo === 'precio' ? {precio_g2: v} : {margen_g2: v};
+  const { error } = await db.from('lfi_insumos').update(cambio).eq('id', id);
+  if (error){ toast('No se guardó el precio.'); return; }
+  Object.assign(i, cambio);
+  const p = precioG2(i);
+  toast(p === null ? `${i.nombre}: sin precio para Groventia Group` : `🏢 ${i.nombre}: ${money(p)} por ${i.unidad}`);
+  VG2 = null;
+  render();
 }
 
 /* — DIRECCIÓN: compra del mes — */
@@ -1249,10 +1390,24 @@ function vAjustes(){
       </div>`;
     }).join('')}`;
 
+  const cPg2 = `<div class="fbody" style="padding-bottom:4px">
+      <p class="mt" style="font-size:12.5px;line-height:1.45">Lo que el CEDIS le vende a Groventia Group. Pon un <b>precio fijo</b>, o deja el precio vacío y pon un <b>% sobre costo</b> para que se ajuste solo cuando cambie el costo.</p>
+    </div>
+    ${CAT.filter(vendibleG2).sort((a,b) => a.nombre.localeCompare(b.nombre,'es')).map(i => {
+      const p = precioG2(i), c = Number(i.costo) || 0;
+      const marg = p !== null && c > 0 ? Math.round((p/c - 1) * 100) : null;
+      return `<div class="linea">
+        <div class="lx"><div class="nm">${esc(i.nombre)}</div>
+          <div class="mt">costo ${c ? money(c) : '—'} por ${esc(i.unidad)} · ${p === null ? '<b style="color:var(--amber)">sin precio</b>' : `le cobras <b>${money(p)}</b>${marg !== null ? ` (${marg}% sobre costo)` : ''}`}</div></div>
+        <div class="fcol"><label>Precio $</label><input class="cant" style="width:74px" type="number" inputmode="decimal" value="${Number(i.precio_g2) > 0 ? Number(i.precio_g2) : ''}" placeholder="—" onfocus="this.select()" onchange="guardarPrecioG2('${i.id}','precio',this.value)"></div>
+        <div class="fcol"><label>o %</label><input class="cant" style="width:56px" type="number" inputmode="decimal" value="${tieneMargenG2(i) ? Number(i.margen_g2) : ''}" placeholder="—" onfocus="this.select()" onchange="guardarPrecioG2('${i.id}','margen',this.value)"></div>
+      </div>`;
+    }).join('')}`;
+
   const cEq = `<div class="fbody">
       <div class="fgrid">
         <div><label class="flbl">Sucursal</label>
-          <select id="eq-suc">${Object.keys(LOCS).map(l=>`<option value="${l}">${LOCS[l].n}</option>`).join('')}</select></div>
+          <select id="eq-suc">${Object.keys(LOCS).map(l=>`<option value="${l}">${LOCS[l].n}${esG2(l) ? ' (Groventia Group)' : ''}</option>`).join('')}</select></div>
         <div><label class="flbl">Nombre</label>
           <input type="text" id="eq-nombre" placeholder="Ej. María"></div>
       </div>
@@ -1306,6 +1461,7 @@ function vAjustes(){
   ${sec('rec', '🥣 Recetas', Object.keys(RECETAS).filter(recetaVisible).length, cRec)}
   ${sec('ins', '➕ Nuevo insumo', '', cIns)}
   ${veCostos() ? sec('cos', '💰 Costos', qCost ? listaCos.length + ' resultados' : 'solo tú', cCos) : ''}
+  ${veCostos() && G2_LOCS.length ? sec('pg2', '🏢 Precios a Groventia Group', CAT.filter(vendibleG2).length + ' productos', cPg2) : ''}
   ${sec('eq', '👥 Equipo y PINs', EQUIPO.length, cEq)}`;
 }
 
