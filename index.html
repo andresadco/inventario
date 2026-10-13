@@ -275,7 +275,7 @@ async function cargar(){
     db.from('lfi_stock').select('*'),
     db.from('lfi_presentaciones').select('*').order('orden'),
     db.from('lfi_solicitudes').select('*').order('created_at', {ascending:false}).limit(120),
-    db.from('lfi_accesos').select('*').order('sucursal').order('nombre'),
+    db.rpc('lfi_equipo'),
     db.from('lfi_recetas').select('*'),
     db.from('lfi_receta_lineas').select('*').order('id'),
   ]);
@@ -299,8 +299,19 @@ async function entrar(){
   const pin = document.getElementById('lg-pin').value.trim();
   const err = document.getElementById('lg-err'); err.textContent='';
   if (!/^\d{4}$/.test(pin)){ err.textContent='El PIN es de 4 números.'; return; }
-  const { data } = await db.from('lfi_accesos').select('*').eq('sucursal',suc).eq('pin',pin).maybeSingle();
-  if (!data){ err.textContent='PIN incorrecto para esa sucursal.'; return; }
+  // El PIN se revisa en el servidor y regresa una sesión segura (la base ya no se abre sin sesión)
+  const btnL = document.querySelector('#login button'); if (btnL) btnL.disabled = true;
+  let j = null;
+  try{
+    const r = await fetch('https://ngpumyxxxlafuzcsaepy.supabase.co/functions/v1/lfi-login', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({sucursal:suc, pin})});
+    j = await r.json().catch(()=>null);
+  }catch(e){ j = null; }
+  if (btnL) btnL.disabled = false;
+  if (!j){ err.textContent='Sin conexión. Revisa tu internet.'; return; }
+  if (!j.ok){ err.textContent = j.error==='bloqueado' ? 'Demasiados intentos. Espera 15 minutos.' : (j.error==='pin' ? 'PIN incorrecto para esa sucursal.' : 'No se pudo entrar. Intenta otra vez.'); return; }
+  const { error: eSes } = await db.auth.setSession(j.session);
+  if (eSes){ err.textContent='No se pudo iniciar sesión. Intenta otra vez.'; return; }
+  const data = j.acceso;
   sesion = {sucursal:data.sucursal, rol:data.rol, nombre:data.nombre || LOCS[data.sucursal].short, ve_costos: !!data.ve_costos};
   try{ localStorage.setItem('lfs_sesion', JSON.stringify(sesion)); }catch(e){}
   tab = 'inv';
@@ -311,7 +322,9 @@ async function arrancar(){
   document.getElementById('shell').style.display='';
   await cargar(); await checarPush(); render();
 }
-function salir(){ try{ localStorage.removeItem('lfs_sesion'); }catch(e){} location.reload(); }
+async function salir(){ try{ localStorage.removeItem('lfs_sesion'); }catch(e){} try{ await db.auth.signOut(); }catch(e){} location.reload(); }
+// Si la sesión segura se pierde (o nunca se creó en este equipo), pedir el PIN otra vez
+db.auth.onAuthStateChange((ev, ses) => { if (ev === 'SIGNED_OUT' && sesion){ try{ localStorage.removeItem('lfs_sesion'); }catch(e){} location.reload(); } });
 
 /* ===== Toast ===== */
 let toastT=null, toastFn=null;
@@ -1492,7 +1505,15 @@ function render(){
 (async () => {
   try{
     const s = localStorage.getItem('lfs_sesion');
-    if (s){ sesion = JSON.parse(s); tab='inv'; await arrancar(); }
+    if (s){
+      const { data: ds } = await db.auth.getSession();
+      if (ds && ds.session){ sesion = JSON.parse(s); tab='inv'; await arrancar(); }
+      else {
+        // Equipos que entraron antes del cambio de seguridad: piden su PIN una sola vez
+        try{ localStorage.removeItem('lfs_sesion'); }catch(e){}
+        const er = document.getElementById('lg-err'); if (er) er.textContent = 'Por seguridad, vuelve a poner tu PIN.';
+      }
+    }
   }catch(e){}
 })();
 document.addEventListener('visibilitychange', async () => {
