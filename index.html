@@ -137,6 +137,33 @@ button.bhead.acc{width:100%;justify-content:flex-start;border:none;font-family:i
 #toast.on{opacity:1;visibility:visible;transform:translateY(0);transition-delay:0s;pointer-events:auto}
 .tundo{color:#FF8FA5;font-weight:800;font-size:14px;padding:4px 8px;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* — v2: más claro en celular y compu — */
+.expbar2{flex-wrap:wrap}
+.expbar2 .btn{min-width:0;padding-left:6px;padding-right:6px;font-size:13.5px}
+.fbody input.cant,.fbody input[type=number].cant{width:74px;margin-bottom:0}
+.alerta{border:1.5px solid var(--amber);background:#FFF7E8;color:#7A4B00;border-radius:14px;padding:12px 14px;margin:0 0 12px;font-size:13.5px;font-weight:700;display:flex;gap:10px;align-items:center}
+.alerta .btn{margin-left:auto;flex:none}
+.fresabox{background:#fff;border:2px solid var(--fresa);border-radius:18px;padding:12px 14px 14px;margin:0 0 14px}
+.fresabox .fh{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.fresabox .fh b{font-size:15px}
+.fresabox .fh span{margin-left:auto;font-size:11.5px;color:var(--muted);font-weight:700}
+.fresabox .fh span.tarde{color:var(--fresa)}
+.fresabox .fila{border:none;padding:4px 0 0;margin:0;box-shadow:none;background:transparent}
+.ftab{width:100%;border-collapse:collapse;font-size:13px}
+.ftab th{white-space:nowrap;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:right;padding:4px 6px;font-weight:800}
+.ftab th:first-child,.ftab td:first-child{text-align:left}
+.ftab td{padding:8px 4px;border-top:1px solid var(--line2);text-align:right;font-family:'IBM Plex Mono',monospace}
+.ftab td:first-child{font-family:inherit;font-weight:700}
+.ftab .gris{color:var(--faint);font-family:inherit;font-size:11.5px}
+.bodega0{color:var(--fresa);font-weight:800}
+.viejo{color:#9A5B00;font-weight:800}
+details.pleg{margin-top:16px}
+details.pleg>summary{cursor:pointer;list-style:none;padding:12px 14px;border:1px solid var(--line2);border-radius:14px;background:#fff;font-weight:800;font-size:14px}
+details.pleg>summary::-webkit-details-marker{display:none}
+details.pleg>summary::after{content:'▾';float:right;color:var(--muted)}
+details.pleg[open]>summary::after{content:'▴'}
+.pinoc{cursor:pointer;text-decoration:underline dotted}
+@media (min-width:1000px){.wrap,.hrow{max-width:960px}}
 </style>
 </head>
 <body>
@@ -240,7 +267,7 @@ const vendibleG2 = i => !!(i && (RECETAS[i.id] || Number(i.precio_g2) > 0 || tie
 const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hoy = () => new Date().toISOString().slice(0,10);
 
-let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[], EQUIPO=[], RECETAS={};
+let CAT=[], INV={}, INVD={}, PRES={}, SOLIC=[], EQUIPO=[], RECETAS={}, MOVD=[];
 let sesion=null, tab='inv', q='', fcat='', soloVenta=true, hechasCom={}, pidiendo=null, enviando=null, prodSel=null, recSel=null;
 const solActiva = s => !s.recibida_at;                      // pendiente o en camino
 const solPend   = s => !s.enviada_at && !s.recibida_at;     // aún no se la mandan
@@ -254,7 +281,7 @@ const stock = (l,id) => Number((INV[l]||{})[id]) || 0;
 const esFrac = i => !!(i && i.fraccion);
 const esMulti = i => !!(i && i.multi && (PRES[i.id]||[]).length);
 const cajasDe = id => PRES[id] || [];
-const fmtCant = (i,n) => { const v = Number(n)||0; return esFrac(i) ? (Math.round(v*1000)/1000).toLocaleString('es-MX',{maximumFractionDigits:3}) : String(Math.round(v)); };
+const fmtCant = (i,n) => { const v = Number(n)||0; return esFrac(i) ? (Math.round(v*100)/100).toLocaleString('es-MX',{maximumFractionDigits:2}) : String(Math.round(v)); };
 const limpia = (i,n) => esFrac(i) ? Math.max(0, Math.round((Number(n)||0)*1000)/1000) : Math.max(0, Math.round(Number(n)||0));
 const money = n => '$' + (Math.round(n*100)/100).toLocaleString('es-MX', {maximumFractionDigits: 2});
 const costoEmp = i => (Number(i.costo)||0) * (Number(i.factor) > 0 ? Number(i.factor) : 1);
@@ -290,6 +317,41 @@ async function cargar(){
   RECETAS = {};
   (rec.data||[]).forEach(r => { RECETAS[r.producto_id] = {rendimiento: Number(r.rendimiento)||1, privada: !!r.privada, lineas: []}; });
   (recl.data||[]).forEach(l => { if (RECETAS[l.producto_id]) RECETAS[l.producto_id].lineas.push(l); });
+  // Fresa (y lo que se cuenta a diario): movimientos de los últimos 8 días para el cierre y el consumo
+  const diarios = CAT.filter(i => i.diario && esMulti(i)).map(i => i.id);
+  MOVD = [];
+  if (diarios.length){
+    const d8 = new Date(Date.now() - 8*864e5).toISOString();
+    const r = await db.from('lfi_movimientos').select('sucursal,insumo_id,delta,tipo,nota,created_at').in('insumo_id', diarios).gte('created_at', d8).order('created_at');
+    MOVD = r.data || [];
+  }
+}
+const esConteo = m => m.tipo === 'ajuste' && /^Conteo/.test(m.nota || '');
+function ultimoConteo(loc, id){
+  const xs = MOVD.filter(m => m.sucursal === loc && m.insumo_id === id && esConteo(m));
+  return xs.length ? xs[xs.length-1].created_at : null;
+}
+function haceTxt(ts){
+  if (!ts) return 'nunca';
+  const h = (Date.now() - new Date(ts).getTime())/3600000;
+  if (h < 1) return 'hace un rato';
+  if (h < 20) return 'hoy, hace ' + Math.round(h) + ' h';
+  const d = Math.round(h/24);
+  return 'hace ' + d + (d === 1 ? ' día' : ' días');
+}
+function haceCorto(ts){
+  if (!ts) return 'nunca';
+  const h = (Date.now() - new Date(ts).getTime())/3600000;
+  return h < 20 ? 'hoy' : Math.round(h/24) + ' d';
+}
+/* Consumo de fresa de una tienda en 7 días: compras − lo que creció su inventario (necesita conteos) */
+function consumoFresa(loc, id){
+  const d7 = Date.now() - 7*864e5;
+  const xs = MOVD.filter(m => m.sucursal === loc && m.insumo_id === id && new Date(m.created_at).getTime() >= d7);
+  const compradas = xs.filter(m => m.tipo === 'entrada').reduce((a,m) => a + Number(m.delta||0), 0);
+  const cambio = xs.reduce((a,m) => a + Number(m.delta||0), 0);
+  const conteos = xs.filter(esConteo).length;
+  return { compradas, usadas: conteos ? Math.max(0, compradas - cambio) : null, conteos };
 }
 
 /* ===== Sesión ===== */
@@ -359,7 +421,11 @@ function abrirPedir(id){
   pidiendo = id; render();
   setTimeout(() => document.getElementById('pd-'+id)?.focus(), 60);
 }
+let pidiendoBusy = false;
 async function confirmarPedir(loc, id){
+  if (pidiendoBusy) return;
+  if (tieneSolic(loc, id)){ pidiendo = null; render(); return; }
+  pidiendoBusy = true; setTimeout(() => { pidiendoBusy = false; }, 1500);
   const i = item(id);
   const v = limpia(i, document.getElementById('pd-'+id)?.value);
   const { error } = await db.from('lfi_solicitudes').insert({sucursal:loc, insumo_id:id, por:quien(), cantidad: v > 0 ? v : null});
@@ -422,6 +488,18 @@ async function recibirSolic(sid, conCampo){
     await db.from('lfi_solicitudes').update({recibida_at:null, recibida_por:null, recibida_cant:null}).eq('id', sid);
     toast('↩︎ Regresó a "viene en camino"'); await cargar(); render();
   });
+  await cargar(); render();
+}
+/* Tienda: confirmar de un jalón todo lo que viene en camino, tal cual lo mandaron */
+async function recibirTodo(loc){
+  const xs = SOLIC.filter(x => x.sucursal === loc && solCamino(x));
+  if (!xs.length) return;
+  if (!confirm(`¿Te llegó completo todo lo que viene en camino? (${xs.length})`)) return;
+  const ahora = new Date().toISOString();
+  for (const x of xs){
+    await db.from('lfi_solicitudes').update({recibida_at:ahora, recibida_por:quien(), recibida_cant:x.enviada_cant}).eq('id', x.id).is('recibida_at', null);
+  }
+  toast(`✓ ${xs.length} ${xs.length===1?'pedido recibido':'pedidos recibidos'}`);
   await cargar(); render();
 }
 /* Costos: se capturan como los compras (por empaque); se guardan por unidad */
@@ -943,33 +1021,46 @@ function barra(){
 const baseLista = () => filtra(CAT.filter(i => soloVenta ? (Number(i.consumo_mes)>0 || i.diario) : true));
 
 /* — TIENDA: contar + avisar — */
+function filaMulti(loc, i, enCaja){
+  const dg = desgloseDe(loc, i.id);
+  return `<div class="fila">
+    <div class="fx"><div class="nm">${enCaja ? '¿Cuántas cajas te quedan?' : esc(i.nombre) + (i.diario ? ' 🍓' : '')}</div><div class="mt">${i.suma_piezas ? 'paquetes cerrados y sueltas' : 'cajas que tienes'} · guarda con ✓</div></div>
+    <div class="cajitas">
+      ${cajasDe(i.id).map(p => `<div class="cj"><label>${esc(p.nombre.replace('Caja ',''))}</label>
+        <input class="cant" type="number" inputmode="numeric" id="cj-${loc}-${i.id}-${p.id}" value="${dg[p.id]||''}" placeholder="0" onfocus="this.select()"></div>`).join('')}
+      <div class="cj"><label>&nbsp;</label><button class="okbtn" style="height:48px" onclick="contarCajas('${loc}','${i.id}')">✓</button></div>
+    </div>
+  </div>`;
+}
+/* Arriba de todo: la fresa, que es lo que más importa contar al cierre */
+function bloqueFresa(loc){
+  const xs = CAT.filter(i => i.diario && esMulti(i));
+  return xs.map(i => {
+    const ult = ultimoConteo(loc, i.id);
+    const tarde = !ult || (Date.now() - new Date(ult).getTime()) > 20*3600000;
+    return `<div class="fresabox">
+      <div class="fh"><b>🍓 ${esc(i.nombre)} al cierre</b><span class="${tarde ? 'tarde' : ''}">último conteo: ${haceTxt(ult)}</span></div>
+      ${filaMulti(loc, i, true)}
+    </div>`;
+  }).join('');
+}
 function vTienda(){
   const loc = sesion.sucursal;
   let html = '', cat = '';
   for (const i of baseLista()){
+    if (i.diario && esMulti(i) && !q) continue;   // ya va arriba en el cuadro de fresa
     if (i.categoria !== cat){ cat = i.categoria; html += `<div class="seccion">${esc(cat)}</div>`; }
     const sol = tieneSolic(loc, i.id);
-    if (esMulti(i)){
-      const dg = desgloseDe(loc, i.id);
-      html += `<div class="fila">
-        <div class="fx"><div class="nm">${esc(i.nombre)}${i.diario ? ' 🍓' : ''}</div><div class="mt">${i.suma_piezas ? 'paquetes cerrados y sueltas' : 'cajas que tienes'} · guarda con ✓</div></div>
-        <div class="cajitas">
-          ${cajasDe(i.id).map(p => `<div class="cj"><label>${esc(p.nombre.replace('Caja ',''))}</label>
-            <input class="cant" type="number" inputmode="numeric" id="cj-${loc}-${i.id}-${p.id}" value="${dg[p.id]||''}" placeholder="0" onfocus="this.select()"></div>`).join('')}
-          <div class="cj"><label>&nbsp;</label><button class="okbtn" style="height:48px" onclick="contarCajas('${loc}','${i.id}')">✓</button></div>
-        </div>
-      </div>`;
-      continue;
-    }
+    if (esMulti(i)){ html += filaMulti(loc, i, false); continue; }
     const s = stock(loc, i.id);
     html += `<div class="fila">
       <div class="fx"><div class="nm">${esc(i.nombre)}</div><div class="mt">${esc(i.unidad)}</div></div>
       <div class="fcol"><label>Tienes</label><input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
         value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)"></div>
       ${sol && solCamino(sol)
-        ? `<div class="fcol"><label>Pedido</label><button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="recibirSolic(${sol.id}, false)">🚚 ✓ Llegó</button></div>`
+        ? `<div class="fcol"><label>En camino</label><button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="irTab('mis')">🚚 ¿Llegó?</button></div>`
         : sol
-        ? `<div class="fcol"><label>Pediste</label><button class="pedirbtn on" onclick="quitarPedir(${sol.id})">🙋 ${sol.cantidad ? fmtCant(i,sol.cantidad)+' '+esc(i.unidad) : 'Pedido'}</button></div>`
+        ? `<div class="fcol"><label>Pediste</label><button class="pedirbtn on" onclick="if(confirm('¿Cancelar este pedido?'))quitarPedir(${sol.id})">🙋 ${sol.cantidad ? fmtCant(i,sol.cantidad)+' '+esc(i.unidad) : 'Pedido'}</button></div>`
         : pidiendo === i.id
         ? `<div class="fcol"><label>Pedir</label><input class="cant" style="width:70px" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" id="pd-${i.id}" placeholder="¿cuánto?"
              onkeydown="if(event.key==='Enter')confirmarPedir('${loc}','${i.id}')"></div>
@@ -979,15 +1070,20 @@ function vTienda(){
         : `<div class="fcol"><label>&nbsp;</label><button class="pedirbtn" onclick="abrirPedir('${i.id}')">🙋 Pedir</button></div>`}
     </div>`;
   }
-  const nCamino = SOLIC.filter(x => x.sucursal === loc && solCamino(x)).length;
-  const aviso = nCamino ? `<button class="btn ghost wide" style="margin-bottom:10px;border-color:var(--leaf);color:var(--leaf)" onclick="irTab('mis')">🚚 Tienes ${nCamino} ${nCamino===1?'pedido':'pedidos'} en camino — tócale para verlos</button>` : '';
+  const camino = SOLIC.filter(x => x.sucursal === loc && solCamino(x));
+  const nCamino = camino.length, nViejos = camino.filter(x => (Date.now() - new Date(x.enviada_at).getTime()) > 24*3600000).length;
+  const aviso = !nCamino ? '' : nViejos
+    ? `<div class="alerta">🚚 Te llegaron ${nCamino} ${nCamino===1?'cosa':'cosas'} y no las has confirmado${nViejos ? ` (${nViejos} de hace más de un día)` : ''}.<button class="btn" onclick="irTab('mis')">Confirmar</button></div>`
+    : `<button class="btn ghost wide" style="margin-bottom:10px;border-color:var(--leaf);color:var(--leaf)" onclick="irTab('mis')">🚚 Tienes ${nCamino} ${nCamino===1?'pedido':'pedidos'} en camino — tócale para verlos</button>`;
   const subG2 = `<p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Las <b>cremas y crumbles</b> se los pides a Andrés con <b>🙋 Pedir</b>. Todo lo demás te llega directo de tu proveedor: cuando llegue, regístralo con <b>📥 Entrada</b>.</p>`;
   return `<h2 class="page">Mi inventario</h2>
-  ${esG2(loc) ? subG2 : `<p class="sub"><b>Escribe cuánto tienes</b> de cada cosa — se guarda solo. Si algo se te está acabando, dale <b>🙋 Pedir</b> y le llega el aviso a Andrés.</p>`}
+  ${esG2(loc) ? subG2 : `<p class="sub"><b>Escribe cuánto tienes</b> (se guarda solo). Si algo se acaba, <b>🙋 Pedir</b>.</p>`}
   ${aviso}
-  ${formsInventario(loc)}
+  ${q ? '' : bloqueFresa(loc)}
   ${barra()}
-  ${html || '<div class="card empty"><b>Sin resultados</b></div>'}`;
+  ${html || '<div class="card empty"><b>Sin resultados</b></div>'}
+  <div class="seccion">¿Llegó o salió algo más?</div>
+  ${formsInventario(loc)}`;
 }
 
 /* — TIENDA: mis pedidos (pendientes, en camino, historial del mes) — */
@@ -995,11 +1091,13 @@ function bloqueCamino(loc){
   const camino = SOLIC.filter(x => x.sucursal === loc && solCamino(x));
   if (!camino.length) return '';
   return `<div class="bloque">
-    <div class="bhead" style="background:var(--leaf)"><b>🚚 Viene en camino</b><span class="mono">tócale ✓ cuando llegue</span></div>
+    <div class="bhead" style="background:var(--leaf)"><b>🚚 Viene en camino</b><span class="mono">${camino.length}</span></div>
+    <div class="fbody" style="padding:12px 14px 4px"><button class="btn wide" style="background:var(--leaf)" onclick="recibirTodo('${loc}')">✓ Llegó todo completo (${camino.length})</button>
+      <div class="mt" style="font-size:12px;color:var(--muted);margin:8px 2px 6px">Si algo llegó distinto, corrige su número abajo y dale ✓ a ese primero.</div></div>
     ${camino.map(x => { const ii = item(x.insumo_id); if(!ii) return '';
       return `<div class="linea">
         <div class="lx"><div class="nm">${esc(ii.nombre)}</div>
-          <div class="mt">te mandaron <b>${x.enviada_cant ? fmtCant(ii,x.enviada_cant)+' '+esc(ii.unidad) : 'tu pedido'}</b>${x.enviada_por ? ' · '+esc(x.enviada_por) : ''} · si llegó distinto, corrige el número</div></div>
+          <div class="mt">te mandaron <b>${x.enviada_cant ? fmtCant(ii,x.enviada_cant)+' '+esc(ii.unidad) : 'tu pedido'}</b> · ${haceTxt(x.enviada_at)}</div></div>
         <input class="cant" type="number" inputmode="${esFrac(ii)?'decimal':'numeric'}" id="rc-${x.id}" value="${x.enviada_cant ? fmtCant(ii,x.enviada_cant) : ''}" onfocus="this.select()">
         <button class="okbtn" onclick="recibirSolic(${x.id}, true)">✓ Llegó</button>
       </div>`; }).join('')}
@@ -1079,8 +1177,20 @@ function vExcel(){
           onfocus="this.select()" onchange="contar('${l}','${i.id}',this.value)"></div>`).join('')}</div>
     </div>`;
   }
+  const fr = CAT.find(i => i.diario && esMulti(i));
+  const cuadroFresa = !fr ? '' : `<div class="bloque"><div class="bhead"><b>🍓 Fresa por tienda · últimos 7 días</b><span class="mono">cajas</span></div>
+    <div style="padding:6px 10px 10px;overflow-x:auto"><table class="ftab">
+      <tr><th>Tienda</th><th>Tiene</th><th>Compró</th><th>Usó</th><th>/día</th><th>Contó</th></tr>
+      ${TIENDAS_ORD.filter(l => l !== 'centro').map(l => { const c = consumoFresa(l, fr.id); const ult = ultimoConteo(l, fr.id);
+        return `<tr><td>${esc(LOCS[l] ? LOCS[l].short : l)}</td><td>${fmtCant(fr, stock(l, fr.id))}</td><td>${fmtCant(fr, c.compradas)}</td>
+          <td>${c.usadas === null ? '<span class="gris">?</span>' : fmtCant(fr, c.usadas)}</td>
+          <td>${c.usadas === null ? '—' : (Math.round(c.usadas/7*10)/10).toLocaleString('es-MX')}</td>
+          <td><span class="${!ult || (Date.now()-new Date(ult).getTime()) > 20*3600000 ? 'viejo' : 'gris'}">${haceCorto(ult)}</span></td></tr>`; }).join('')}
+    </table>
+    <div class="mt" style="font-size:11.5px;color:var(--muted);margin-top:8px">Las compras de fresa del app de gastos entran solas a cada tienda. "Usó" = lo que compró menos lo que le sobra; sale "?" hasta que la tienda cuente sus cajas al cierre.</div></div></div>`;
   return `<h2 class="page">Inventario</h2>
-  <p class="sub">Tu tabla de siempre, pero viva: lo que cuentan las tiendas aparece aquí solo. El chip te dice <b>cuántos días te alcanza</b> con el consumo real. Puedes corregir cualquier número.</p>
+  <p class="sub">Lo que cuentan las tiendas aparece aquí solo. El chip te dice <b>cuántos días te alcanza</b>. Puedes corregir cualquier número.</p>
+  ${cuadroFresa}
   ${formsInventario(null)}
   ${vRecibido()}
   ${(() => {
@@ -1127,15 +1237,15 @@ function vPiden(){
     }
     return `<div class="linea">
       <div class="lx"><div class="nm">${esc(i.nombre)}</div>
-        <div class="mt">pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · tienen ${fmtCant(i, stock(s.sucursal, i.id))} · bodega ${fmtCant(i,disp)} · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
-      <button class="okbtn" onclick="enviando=${s.id};render();setTimeout(()=>document.getElementById('env-${s.id}')?.focus(),60)">✓ Ya se lo mandé</button>
+        <div class="mt">pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · tienen ${fmtCant(i, stock(s.sucursal, i.id))}<br>${disp > 0 ? 'en bodega ' + fmtCant(i,disp) : '<span class="bodega0">⚠ no hay en bodega</span>'} · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}</div></div>
+      <button class="okbtn" onclick="enviando=${s.id};render();setTimeout(()=>document.getElementById('env-${s.id}')?.focus(),60)">📦 Mandar</button>
     </div>`;
   };
   const filaCamino = s => {
     const i = item(s.insumo_id); if (!i) return '';
     return `<div class="linea">
       <div class="lx"><div class="nm">${esc(i.nombre)}</div>
-        <div class="mt">enviaste <b>${s.enviada_cant ? fmtCant(i,s.enviada_cant)+' '+esc(i.unidad) : '—'}</b> · esperando que confirmen recibido</div></div>
+        <div class="mt">enviaste <b>${s.enviada_cant ? fmtCant(i,s.enviada_cant)+' '+esc(i.unidad) : '—'}</b> · ${(Date.now() - new Date(s.enviada_at).getTime()) > 24*3600000 ? `<span class="viejo">sin confirmar ${haceTxt(s.enviada_at)}</span>` : 'esperando que confirmen · ' + haceTxt(s.enviada_at)}</div></div>
     </div>`;
   };
   const filaCerrada = s => {
@@ -1151,13 +1261,16 @@ function vPiden(){
     if (!xs.length) return '';
     return `<div class="gsuc">${esc(LOCS[su] ? LOCS[su].short : su)}${esG2(su) ? ' (Groventia Group)' : ''} · ${xs.length}</div>` + xs.map(fila).join('');
   }).join('');
+  const viejos = camino.filter(x => (Date.now() - new Date(x.enviada_at).getTime()) > 24*3600000);
+  const porSucV = TIENDAS_ORD.map(su => [su, viejos.filter(x => x.sucursal === su).length]).filter(x => x[1]);
   return `<h2 class="page">Me piden</h2>
-  <p class="sub">Al dar <b>✓ Ya se lo mandé</b> pones cuánto mandas: sale de tu bodega, entra a la tienda y queda registrado. La tienda confirma cuando le llegue.</p>
+  <p class="sub">Con <b>📦 Mandar</b> pones cuánto mandas: sale de tu bodega y entra a la tienda. La tienda confirma cuando le llega.</p>
+  ${viejos.length ? `<div class="alerta">⏰ ${viejos.length} ${viejos.length===1?'envío lleva':'envíos llevan'} más de un día sin que la tienda confirme: ${porSucV.map(x => esc(LOCS[x[0]] ? LOCS[x[0]].short : x[0]) + ' ' + x[1]).join(' · ')}</div>` : ''}
   ${pend.length ? `<div class="bloque"><div class="bhead"><b>🙋 Pendientes</b><span class="mono">${pend.length}</span></div>${porTienda(pend, filaPend)}</div>` : ''}
   ${camino.length ? `<div class="bloque"><div class="bhead" style="background:var(--leaf)"><b>🚚 En camino</b><span class="mono">${camino.length}</span></div>${porTienda(camino, filaCamino)}</div>` : ''}
   ${cerradas.length ? `<div class="bloque"><div class="bhead" style="background:#8A7178"><b>✓ Recibidos</b><span class="mono">últimos ${cerradas.length}</span></div>${cerradas.map(filaCerrada).join('')}</div>` : ''}
-  ${resumenMes()}
-  ${veCostos() ? vVentaG2() : ''}`;
+  <details class="pleg"><summary>📋 Control del mes y exportar</summary>${resumenMes()}</details>
+  ${veCostos() ? `<details class="pleg"><summary>🧾 Venta a Groventia Group</summary>${vVentaG2()}</details>` : ''}`;
 }
 
 /* Resumen de control del mes: todas las tiendas, con exportación */
@@ -1433,7 +1546,7 @@ function vAjustes(){
       <div class="seccion" style="padding:0 14px">${esc(LOCS[su] ? LOCS[su].n : su)}</div>
       ${porSuc[su].map(a => `<div class="linea">
         <div class="lx"><div class="nm">${esc(a.nombre || 'Sin nombre')}</div>
-          <div class="mt">PIN ${esc(String(a.pin))} · ${a.rol === 'direccion' ? 'dirección' : 'tienda'}${a.ve_costos ? ' · 💰 ve costos' : ''}</div></div>
+          <div class="mt">PIN <span class="pinoc" onclick="this.textContent=this.dataset.p" data-p="${esc(String(a.pin))}">••••</span> · ${a.rol === 'direccion' ? 'dirección' : 'tienda'}${a.ve_costos ? ' · 💰 ve costos' : ''}</div></div>
         <button class="okbtn" style="background:#F3E9EC;color:var(--muted)" onclick="borrarAcceso(${a.id}, '${esc(a.nombre||'esta persona')}')">✕</button>
       </div>`).join('')}`).join('')}`;
 
