@@ -1091,6 +1091,7 @@ function filaMulti(loc, i, enCaja){
 }
 /* Arriba de todo: la fresa, que es lo que más importa contar al cierre */
 function bloqueFresa(loc){
+  if (DESP.activo) return '';   // con el envío diario prendido la tienda ya no maneja fresa entera en cajas: cuenta fresa cortada al cierre
   const xs = CAT.filter(i => i.diario && esMulti(i));
   return xs.map(i => {
     const ult = ultimoConteo(loc, i.id);
@@ -1105,7 +1106,7 @@ function vTienda(){
   const loc = sesion.sucursal;
   let html = '', cat = '';
   for (const i of baseLista()){
-    if (i.diario && esMulti(i) && !q) continue;   // ya va arriba en el cuadro de fresa
+    if (i.diario && esMulti(i) && (!q || DESP.activo)) continue;   // ya va arriba en el cuadro de fresa (o ya no aplica en tienda)
     if (i.categoria !== cat){ cat = i.categoria; html += `<div class="seccion">${esc(cat)}</div>`; }
     const sol = tieneSolic(loc, i.id);
     if (esMulti(i)){ html += filaMulti(loc, i, false); continue; }
