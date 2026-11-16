@@ -1592,6 +1592,118 @@ function vAjustes(){
 }
 
 /* ===== Render ===== */
+/* ===== Inventario B: lo que debería haber según ventas del POS × recetas (solo quien ve costos) ===== */
+let BDATA = null, bCargando = false, bErr = '', bSuc = '', bDesde = '', bSolo = true;
+const B_TIENDAS = ['moctezuma','narvarte','balbuena'];
+const bFecha = ts => ts ? new Date(ts).toLocaleDateString('es-MX', {day:'numeric', month:'short', timeZone:'America/Mexico_City'}) : '';
+const bDia = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-MX', {day:'numeric', month:'short'}) : '';
+const bNum = n => (Math.round((Number(n)||0)*100)/100).toLocaleString('es-MX', {maximumFractionDigits:2});
+async function cargarB(){
+  if (bCargando) return;
+  bCargando = true; bErr = '';
+  try{
+    const { data, error } = await db.rpc('lfi_inventario_b', bDesde ? {p_desde: bDesde} : {});
+    if (error){ bErr = error.message || 'No se pudo leer.'; BDATA = {filas:[], tiendas:[], sin_receta:[]}; }
+    else { BDATA = data; if (!bDesde) bDesde = data.desde; }
+  }catch(e){ bErr = 'Sin conexión.'; BDATA = {filas:[], tiendas:[], sin_receta:[]}; }
+  bCargando = false; render();
+}
+function bCambiarDesde(v){ if (!v) return; bDesde = v; BDATA = null; render(); }
+function bFilas(suc){
+  return (BDATA.filas || []).filter(f => f.sucursal === suc).map(f => {
+    const costo = Number(f.costo) || 0;
+    const teoC = f.contado ? Number(f.teo_conteo) || 0 : null;
+    const realU = f.contado ? Number(f.real_usado) || 0 : null;
+    const dif = f.contado ? teoC - realU : null;                 // + sobró contra receta · − se usó de más
+    const pct = f.contado && teoC > 0 ? (realU - teoC) / teoC * 100 : null;
+    return {...f, costo, teoC, realU, dif, pct, difPesos: dif === null ? null : dif * costo};
+  });
+}
+function bEstado(x){
+  if (!x.contado) return ['gris', 'sin conteo'];
+  if (x.teoC === 0 && x.realU === 0) return ['gris', 'sin uso'];
+  if (x.n_conteo === 0 && x.teoC > 0) return ['ambar', 'conteo sin cambio'];
+  if (x.teoC === 0) return ['ambar', 'uso sin venta'];
+  const p = Math.abs(x.pct);
+  if (p <= 15) return ['verde', 'cuadra'];
+  return [x.pct > 0 ? 'rojo' : 'ambar', (x.pct > 0 ? '+' : '') + Math.round(x.pct) + '%'];
+}
+function vB(){
+  if (!veCostos()) return '';
+  const cab = `<h2 class="page">Inventario B</h2>
+    <p class="sub">Lo que <b>debería</b> haber según lo que se vendió en el POS y las recetas, junto a lo que las tiendas contaron. No mueve existencias: es solo para comparar y afinar recetas.</p>`;
+  if (BDATA === null){
+    if (!bCargando) setTimeout(cargarB, 0);
+    return cab + `<div class="empty"><div class="emx">🧮</div><b>Calculando…</b>Leyendo ventas, recetas y conteos.</div>`;
+  }
+  if (bErr) return cab + `<div class="alerta">No se pudo calcular: ${esc(bErr)}<button class="btn ghost" onclick="BDATA=null;render()">Reintentar</button></div>`;
+  const tiendas = B_TIENDAS.filter(s => !bSuc || s === bSuc);
+  const chips = `<div class="chips" style="margin:0 0 12px">
+      <button class="chip ${!bSuc?'on':''}" onclick="bSuc='';render()">Todas</button>
+      ${B_TIENDAS.map(s => `<button class="chip ${bSuc===s?'on':''}" onclick="bSuc='${s}';render()">${esc(LOCS[s] ? LOCS[s].short : s)}</button>`).join('')}
+      <button class="chip ${bSolo?'on':''}" onclick="bSolo=!bSolo;render()">Solo diferencias</button>
+    </div>
+    <div class="linea" style="background:#fff;border:1px solid var(--line);border-radius:14px;margin-bottom:14px">
+      <div class="lx"><div class="nm">Comparar desde</div><div class="mt">Toma el primer conteo completo de cada tienda a partir de ese día. Las tres tiendas cobran en el POS desde el 3 nov.</div></div>
+      <input type="date" value="${esc(bDesde||'')}" onchange="bCambiarDesde(this.value)" style="padding:10px;border:1px solid var(--line2);border-radius:10px;background:#fff;font-size:14px">
+    </div>`;
+  const bloques = tiendas.map(s => {
+    const t = (BDATA.tiendas || []).find(x => x.sucursal === s) || {};
+    const xs = bFilas(s);
+    const comp = xs.filter(x => x.contado && (x.teoC > 0 || x.realU !== 0));
+    const teoP = comp.reduce((a,x) => a + x.teoC * x.costo, 0), realP = comp.reduce((a,x) => a + x.realU * x.costo, 0);
+    const periodo = t.ultimo ? `del conteo del ${bDia(t.ancla_dia)} al del ${bDia(t.ultimo_dia)}` : (t.ancla_dia ? `desde el conteo del ${bDia(t.ancla_dia)}` : `desde el ${bDia(BDATA.desde)}`);
+    const aviso = t.ultimo ? '' : `<div class="linea" style="background:#FFF7E8"><div class="lx"><div class="nm" style="color:#7A4B00">Falta un conteo completo</div>
+        <div class="mt">${t.ancla_dia ? `Esta tienda no ha hecho otro conteo completo desde el ${bDia(t.ancla_dia)}.` : 'Esta tienda no tiene un conteo completo en el periodo.'} Mientras tanto solo se puede ver lo que debería haber; la comparación sale cuando cuenten.</div></div></div>`;
+    const orden = xs.slice().sort((a,b) => Math.abs(b.difPesos||0) - Math.abs(a.difPesos||0) || a.nombre.localeCompare(b.nombre));
+    const vis = orden.filter(x => {
+      if (!bSolo) return true;
+      const [cl] = bEstado(x);
+      return cl === 'rojo' || cl === 'ambar' || (!x.contado && Number(x.teo) > 0);
+    });
+    const filas = vis.map(x => {
+      const [cl, et] = bEstado(x);
+      const u = esc(x.unidad || '');
+      const l1 = x.contado
+        ? `Receta: <b>${bNum(x.teoC)}</b> · Conteo: <b>${bNum(x.realU)}</b> ${u}${x.difPesos ? ` · ${x.dif < 0 ? 'se usó de más' : 'sobró'} ${money(Math.abs(x.difPesos))}` : ''}`
+        : `Vendido según receta: <b>${bNum(x.teo)}</b> ${u}`;
+      const l2 = `Debería haber: <b>${bNum(x.b)}</b> · La app dice: <b>${bNum(x.real)}</b> ${u}`;
+      return `<div class="linea">
+        <div class="lx"><div class="nm">${esc(x.nombre)}${x.estimado ? ' <span style="font-size:10px;font-weight:800;color:var(--amber)">RECETA ESTIMADA</span>' : ''}</div>
+          <div class="mt">${l1}<br>${l2}</div></div>
+        <span class="dias ${cl}">${esc(et)}</span>
+      </div>`;
+    }).join('');
+    return `<div class="bloque">
+      <div class="bhead"><b>${esc(LOCS[s] ? LOCS[s].short : s)}</b><span class="mono">${esc(periodo)} · ${Number(t.ordenes)||0} ventas</span></div>
+      ${aviso}
+      ${comp.length ? `<div class="linea" style="background:#FFFBFA"><div class="lx"><div class="nm">Consumo del periodo</div>
+          <div class="mt">Según receta ${money(teoP)} · Según conteos ${money(realP)}</div></div>
+          <span class="tot">${realP >= teoP ? '+' : '−'}${money(Math.abs(realP - teoP))}</span></div>` : ''}
+      ${filas || `<div class="empty" style="padding:18px">${bSolo ? 'Nada fuera de rango. Quita "Solo diferencias" para ver todo.' : 'Sin insumos con receta en esta tienda.'}</div>`}
+    </div>`;
+  }).join('');
+  const sr = BDATA.sin_receta || [];
+  const sinRec = sr.length ? `<details class="pleg"><summary>Se vendió y no tiene receta (${sr.length})</summary>
+      <div class="bloque" style="margin-top:8px">${sr.map(x => {
+        const [tipo, nom] = String(x.clave).startsWith('*') ? String(x.clave).slice(1).split('|') : ['producto', x.clave];
+        const et = {top:'Topping', base:'Base', shot:'Shot', vaso:'Vaso', producto:'Producto'}[tipo] || tipo;
+        return `<div class="linea"><div class="lx"><div class="nm">${esc(nom)}</div><div class="mt">${esc(et)} · no descuenta nada todavía</div></div><span class="tot">${Number(x.n)||0}<span class="u"> vend.</span></span></div>`;
+      }).join('')}</div></details>` : '';
+  const notas = `<div class="mt" style="font-size:11.5px;color:var(--faint);padding:12px 2px;line-height:1.55">
+      <b>Cómo leerlo.</b> "Receta" es lo que se debió gastar por las ventas entre conteos; "Conteo" es lo que bajó de verdad según lo que contó la tienda. El % es cuánto se usó de más (+) o de menos (−) contra la receta. "Conteo sin cambio" quiere decir que hubo ventas pero la tienda dejó el mismo número: casi siempre es que no lo contaron. Las entradas, envíos y salidas registradas ya están consideradas.
+    </div>`;
+  return cab + chips + bloques + `<div class="expbar2"><button class="btn ghost" onclick="exportarB()">⬇︎ Exportar</button><button class="btn ghost" onclick="BDATA=null;render()">↻ Actualizar</button></div>` + sinRec + notas;
+}
+function exportarB(){
+  if (!BDATA) return;
+  const c = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+  const filas = [['Tienda','Insumo','Categoría','Unidad','Receta estimada','Inicial','Entradas y salidas','Vendido según receta (total)','Receta al último conteo','Usado según conteos','Diferencia','Diferencia $','Debería haber (B)','La app dice','Último conteo'].map(c).join(',')];
+  B_TIENDAS.forEach(s => bFilas(s).forEach(x => filas.push([LOCS[s] ? LOCS[s].short : s, x.nombre, x.categoria, x.unidad, x.estimado ? 'sí' : 'no', x.inicial, x.movs, x.teo,
+    x.contado ? x.teoC : '', x.contado ? x.realU : '', x.contado ? Math.round(x.dif*1000)/1000 : '', x.contado ? Math.round(x.difPesos*100)/100 : '', x.b, x.real, x.ultimo ? bFecha(x.ultimo) : ''].map(c).join(','))));
+  descargar('inventario-b-desde-' + (BDATA.desde || ''), filas.join('\n'));
+}
+
 function irTab(k){ tab=k; q=''; window.scrollTo(0,0); render(); }
 function render(){
   document.getElementById('ctx').textContent = `${quien()} · ${LOCS[sesion.sucursal].short}`;
@@ -1606,8 +1718,11 @@ function render(){
     document.getElementById('app').innerHTML = avisosBar() + viewsT[tab]();
     return;
   }
-  const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.filter(solPend).length], ['com','Compra','🛒',0], ['aj','Ajustes','⚙️',0]];
+  const tabs = [['inv','Inventario','📦',0], ['pid','Me piden','🙋',SOLIC.filter(solPend).length], ['com','Compra','🛒',0]];
+  if (veCostos()) tabs.push(['b','Teórico','🧮',0]);
+  tabs.push(['aj','Ajustes','⚙️',0]);
   const views = {inv:vExcel, pid:vPiden, com:vCompra, aj:vAjustes};
+  if (veCostos()) views.b = vB;
   if (!views[tab]) tab='inv';
   document.getElementById('nav').style.display='';
   document.getElementById('nav').innerHTML = tabs.map(([k,n,ic,p]) =>
