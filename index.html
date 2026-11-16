@@ -256,6 +256,7 @@ const TIENDAS_ORD = ['moctezuma','narvarte','balbuena','condesa','centro'];
    Compran directo a proveedor; Groventia 1 solo les vende lo que produce (cremas y crumbles). */
 const esG2 = l => !!(LOCS[l] && LOCS[l].g2);
 const G2_LOCS = Object.keys(LOCS).filter(l => LOCS[l].g2);
+const REPARTO_LOCS = Object.keys(LOCS).filter(l => l !== 'centro');
 const tieneMargenG2 = i => i && i.margen_g2 !== null && i.margen_g2 !== undefined && i.margen_g2 !== '';
 function precioG2(i){
   if (!i) return null;
@@ -663,6 +664,7 @@ function formsInventario(fijo){
     const rec = prodSel ? RECETAS[prodSel] : null;
     const prod = prodSel ? item(prodSel) : null;
     const lotes = Math.round((Number(document.getElementById('pr-lotes')?.value) || 1)*100)/100 || 1;
+    const repPrev = {}; REPARTO_LOCS.forEach(l => { repPrev[l] = document.getElementById('pr-rep-' + l)?.value || ''; });
     return botones + `<div class="bloque"><div class="fbody">
       <div class="fgrid">
         <div><label class="flbl">¿Qué vas a hacer?</label>
@@ -680,6 +682,12 @@ function formsInventario(fijo){
               <div class="mt">${fmtCant(li,v)} ${esc(li.unidad)} · en bodega hay ${fmtCant(li,disp)}${disp < v ? ' <b style="color:var(--fresa)">⚠ no alcanza</b>' : ''}</div></div>
           </div>`; }).join('')}
         <div class="mt" style="margin:6px 0 12px;font-weight:700">🥣 Vas a producir <b>${fmtCant(prod, (Number(rec.rendimiento)||1)*lotes)} ${esc(prod.unidad)}</b> de ${esc(prod.nombre)}</div>
+        <div class="seccion" style="margin-top:4px">¿Cuánto mandas a cada tienda? (${esc(prod.unidad)})</div>
+        <div class="xg" style="margin:0 0 6px">
+          ${REPARTO_LOCS.map(l => `<div class="c"><label>${esc(LOCS[l].short)}</label>
+            <input type="number" inputmode="decimal" min="0" step="any" id="pr-rep-${l}" value="${esc(repPrev[l]||'')}" placeholder="0"></div>`).join('')}
+        </div>
+        <div class="mt" style="margin:0 0 12px">Lo que pongas entra directo al inventario de la tienda, sin pedido. Lo que no repartas se queda en el CEDIS.</div>
         <button class="btn wide" onclick="producir()">✓ Producir</button>`
       : `<div class="empty" style="padding:14px">Esta receta aún no tiene ingredientes.<br>Ármala en ⚙️ Ajustes → 🥣 Recetas.</div>`}
     </div></div>`;
@@ -712,16 +720,32 @@ async function producir(){
   const lotes = Math.round((Number(document.getElementById('pr-lotes')?.value)||0)*100)/100;
   if (lotes <= 0){ toast('Pon cuántos lotes vas a hacer.'); return; }
   const rinde = Math.round((Number(rec.rendimiento)||1) * lotes * 1000)/1000;
+  const reparto = REPARTO_LOCS.map(l => [l, limpia(prod, document.getElementById('pr-rep-' + l)?.value)]).filter(([l, v]) => v > 0);
+  const totalRep = reparto.reduce((a, [l, v]) => a + v, 0);
+  if (totalRep > rinde + stock('centro', pid) + 0.0005){ toast('Estás repartiendo más de lo que hay: produces ' + fmtCant(prod, rinde) + ' y en el CEDIS hay ' + fmtCant(prod, stock('centro', pid)) + '.'); return; }
   for (const l of rec.lineas){
     const v = Math.round(Number(l.cantidad) * lotes * 1000)/1000;
     const r = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:l.insumo_id, p_delta:-v, p_tipo:'salida', p_nota:'Producción: ' + prod.nombre, p_por:quien()});
     if (r.error){ toast('No se pudo descontar ' + (item(l.insumo_id)?.nombre||'un ingrediente')); return; }
   }
   await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:pid, p_delta:rinde, p_tipo:'entrada', p_nota:'Producción (' + lotes + ' lote' + (lotes!==1?'s':'') + ')', p_por:quien()});
+  // Reparto: lo que va a cada tienda entra directo, como una transferencia desde el CEDIS
+  const hechos = [];
+  for (const [l, v] of reparto){
+    const r1 = await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:pid, p_delta:-v, p_tipo:'salida', p_nota:'Transferencia a ' + LOCS[l].short, p_por:quien()});
+    if (r1.error){ toast('Se produjo, pero no se pudo mandar a ' + LOCS[l].short + '. Usa 🔄 Transferir.'); continue; }
+    await db.rpc('lfi_mover', {p_suc:l, p_insumo:pid, p_delta:v, p_tipo:'entrada', p_nota:'Transferencia de ' + LOCS.centro.short, p_por:quien()});
+    hechos.push([l, v]);
+    notificar('enviado', l, '🥣 Te mandaron ' + prod.nombre, fmtCant(prod, v) + ' ' + prod.unidad + ' · ya está en tu inventario');
+  }
   await recalcCostoProducto(pid);
   formInv = null;
   const lineasCopia = rec.lineas.map(l => ({insumo_id: l.insumo_id, cantidad: Number(l.cantidad)}));
-  toastAccion(`🥣 Hiciste ${fmtCant(prod, rinde)} ${esc(prod.unidad)} de ${esc(prod.nombre)}`, 'Deshacer', async () => {
+  toastAccion(`🥣 Hiciste ${fmtCant(prod, rinde)} ${esc(prod.unidad)} de ${esc(prod.nombre)}${hechos.length ? ' · repartido a ' + hechos.map(([l]) => LOCS[l].short).join(', ') : ''}`, 'Deshacer', async () => {
+    for (const [l, v] of hechos){
+      await db.rpc('lfi_mover', {p_suc:l, p_insumo:pid, p_delta:-v, p_tipo:'ajuste', p_nota:'Deshecho: transferencia', p_por:quien()});
+      await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:pid, p_delta:v, p_tipo:'ajuste', p_nota:'Deshecho: transferencia (regreso)', p_por:quien()});
+    }
     for (const l of lineasCopia){
       await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:l.insumo_id, p_delta: Math.round(l.cantidad*lotes*1000)/1000, p_tipo:'ajuste', p_nota:'Deshecho: producción', p_por:quien()});
     }
