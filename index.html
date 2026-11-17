@@ -819,15 +819,15 @@ function vInicioAndres(){
   const nPend = SOLIC.filter(solPend).length;
   if (nPend) filas.push(hnav(nPend + (nPend === 1 ? ' pedido de tienda sin atender' : ' pedidos de tiendas sin atender'), 'Están esperando que se los manden', "irTab('pid')"));
   const nPoco = CAT.filter(i => { const d = cobertura(i); return d !== null && d < 7; }).length;
-  if (nPoco) filas.push(hnav(nPoco + (nPoco === 1 ? ' insumo alcanza' : ' insumos alcanzan') + ' para menos de una semana', 'Revisa la compra del mes', "irTab('com')"));
+  if (nPoco) filas.push(hnav(nPoco + (nPoco === 1 ? ' insumo alcanza' : ' insumos alcanzan') + ' para menos de una semana', 'Revisa la compra a 15 días', "irTab('com')"));
   return hero('Hola, ' + quien(), 'Las tiendas y el CEDIS · ' + hoyTxt())
     + `<div class="hstats"><div class="hstat"><div class="k">Inventario</div><div class="v">${money(Math.round(valor))}</div><div class="s">en todo el negocio</div></div>
-        <div class="hstat"><div class="k">Compra del mes</div><div class="v">${money(Math.round(compra))}</div><div class="s">lo que falta pedir</div></div></div>`
+        <div class="hstat"><div class="k">Compra a 15 días</div><div class="v">${money(Math.round(compra))}</div><div class="s">lo que falta pedir</div></div></div>`
     + `<h3 class="hsec">Necesita tu atención</h3><div class="hcard">${filas.join('') || '<div class="hrow2"><span class="x"><span class="t">Todo en orden</span><span class="s">No hay nada urgente ahorita</span></span></div>'}</div>`
     + `<h3 class="hsec">Ver más</h3><div class="hcard">
         ${hnav('Existencias por tienda','Qué hay y para cuántos días alcanza',"irTab('inv')")}
         ${hnav('Teórico contra real','Lo vendido según receta contra lo contado',"irTab('b')")}
-        ${hnav('Compra del mes','Por proveedor, lista para pedir',"irTab('com')")}
+        ${hnav('Compra a 15 días','Por proveedor, lista para pedir',"irTab('com')")}
         ${hnav('Operación del CEDIS','Mandar a tiendas, producir y entradas',"homeOp=true;window.scrollTo(0,0);render()")}
       </div>`
     + `<button class="hlink" onclick="irTab('aj')">${hic('gear',18)}&nbsp; Ajustes: costos, recetas y equipo</button>`;
@@ -1225,11 +1225,13 @@ function copiarRecibido(){
   copiar(L.join('\n'));
 }
 
-/* ===== Compra del mes ===== */
+/* ===== Compra a 15 días (antes era a un mes completo) ===== */
+const DIAS_COMPRA = 15;
 function compraMes(){
   return CAT.map(i => {
     if (i.diario) return null;                     // la fresa se compra diario, aparte
-    const c = Number(i.consumo_mes)||0; if (!c) return null;
+    const cm = Number(i.consumo_mes)||0; if (!cm) return null;
+    const c = cm * DIAS_COMPRA / 30;               // lo que se gasta en 15 días
     const pos = posTotal(i.id);
     let falta = esFrac(i) ? Math.round((c-pos)*10)/10 : Math.ceil(c-pos);
     if (falta <= 0) return null;
@@ -1239,7 +1241,7 @@ function compraMes(){
   }).filter(Boolean).sort((a,b) => (a.dias??999) - (b.dias??999));
 }
 function textoCompra(prov, items){
-  const L = [`🍓 *Lady Fresa* — compra del mes (${hoy()})`, '', `*${prov}*`, ''];
+  const L = [`🍓 *Lady Fresa* — compra a 15 días (${hoy()})`, '', `*${prov}*`, ''];
   items.forEach(n => {
     if (n.f !== 1) L.push(`• ${n.i.nombre}: *${n.packs} ${n.i.empaque||'paquete'}${n.packs!==1?'s':''}*`);
     else L.push(`• ${n.i.nombre}: *${fmtCant(n.i,n.falta)} ${n.i.unidad}*`);
@@ -1676,8 +1678,8 @@ async function guardarPrecioG2(id, campo, val){
 /* — DIRECCIÓN: compra del mes — */
 function vCompra(){
   const ns = compraMes();
-  if (!ns.length) return `<h2 class="page">Compra del mes</h2>
-    <div class="card empty"><div class="emx">🎉</div><b>Estás cubierto</b>Con lo que hay en todo el negocio alcanza para el consumo del mes.</div>`;
+  if (!ns.length) return `<h2 class="page">Compra a 15 días</h2>
+    <div class="card empty"><div class="emx">🎉</div><b>Estás cubierto</b>Con lo que hay en todo el negocio alcanza para los próximos 15 días.</div>`;
   const porProv = {};
   ns.forEach(n => { const p = n.i.proveedor || 'Sin proveedor'; (porProv[p]=porProv[p]||[]).push(n); });
   const costoDe = n => costoEmp(n.i) > 0 ? (n.f > 1 ? n.packs * costoEmp(n.i) : n.falta * (Number(n.i.costo)||0)) : 0;
@@ -1690,7 +1692,7 @@ function vCompra(){
         const hecha = hechasCom[n.i.id];
         return `<div class="linea">
           <div class="lx"><div class="nm">${esc(n.i.nombre)}</div>
-            <div class="mt">tienes ${fmtCant(n.i,n.pos)} en total · gastas ${fmtCant(n.i,n.c)}/mes${n.dias!==null?` · te alcanza <b>${n.dias} días</b>`:''}${veCostos() && costoDe(n)>0 ? ` · <b>≈ ${money(costoDe(n))}</b>` : ''}</div></div>
+            <div class="mt">tienes ${fmtCant(n.i,n.pos)} en total · gastas ${fmtCant(n.i,Math.round(n.c*10)/10)} en 15 días${n.dias!==null?` · te alcanza <b>${n.dias} días</b>`:''}${veCostos() && costoDe(n)>0 ? ` · <b>≈ ${money(costoDe(n))}</b>` : ''}</div></div>
           <input class="cant ${hecha?'hecha':''}" type="number" inputmode="numeric" id="cp-${n.i.id}"
             value="${n.f!==1 ? n.packs : fmtCant(n.i,n.falta)}" onfocus="this.select()">
           <span class="uni">${n.f!==1 ? esc(n.i.empaque||'paq') : esc(n.i.unidad)}</span>
@@ -1701,8 +1703,8 @@ function vCompra(){
         <button class="btn ghost" onclick='copiar(textoCompra(${JSON.stringify(p)}, compraMes().filter(n => (n.i.proveedor||"Sin proveedor")===${JSON.stringify(p)})))'>📋 Copiar para WhatsApp</button>
       </div>
     </div>`).join('');
-  return `<h2 class="page">Compra del mes</h2>
-  <p class="sub">Lo que falta para cubrir <b>un mes de consumo real</b> con lo que hay en todo el negocio. Copia la lista a cada proveedor; cuando llegue, dale <b>✓ Llegó</b> y entra a tu bodega solo.</p>
+  return `<h2 class="page">Compra a 15 días</h2>
+  <p class="sub">Lo que falta para cubrir <b>15 días de consumo real</b> con lo que hay en todo el negocio. Copia la lista a cada proveedor; cuando llegue, dale <b>✓ Llegó</b> y entra a tu bodega solo.</p>
   ${veCostos() && granTotal > 0 ? `<div class="card" style="padding:14px 16px;margin-bottom:12px;display:flex;align-items:baseline;gap:10px">
     <span class="mt" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)">Esta compra te va a costar</span>
     <span class="mono" style="font-size:22px;font-weight:700;margin-left:auto">${money(granTotal)}</span>
