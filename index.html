@@ -702,9 +702,16 @@ async function mandarDespacho(){
   const envios = DESP.items.map(it => ({insumo_id: it.insumo_id, envases: Math.round((Number(document.getElementById('dp-' + it.insumo_id)?.value)||0)*1000)/1000})).filter(e => e.envases > 0);
   if (!envios.length){ toast('Pon cuánto mandas de al menos una cosa.'); return; }
   despMandando = true;
-  const { data, error } = await db.rpc('lfi_despachar', {p_sucursal: suc, p_envios: envios, p_por: quien()});
+  let { data, error } = await db.rpc('lfi_despachar', {p_sucursal: suc, p_envios: envios, p_por: quien()});
+  // si se cayó el internet un momento, se reintenta una vez solo (la función no duplica si nunca llegó)
+  if (error && /fetch|network|Load failed/i.test(error.message || '')){ await new Promise(r => setTimeout(r, 1500)); ({ data, error } = await db.rpc('lfi_despachar', {p_sucursal: suc, p_envios: envios, p_por: quien()})); }
   despMandando = false;
-  if (error || !data || !data.ok){ toast('No se pudo registrar el envío. Intenta otra vez.'); return; }
+  if (error || !data || !data.ok){
+    const red = error && /fetch|network|Load failed/i.test(error.message || '');
+    const motivo = data && data.error === 'apagado' ? 'El envío diario está apagado.' : (data && data.error) ? ('No se pudo: ' + data.error + '.') : '';
+    toast(red ? '📶 Sin internet: no se mandó nada. Revisa tu señal e intenta otra vez.' : (motivo || ('No se pudo registrar el envío' + (error && error.message ? ' (' + error.message + ')' : '') + '. Intenta otra vez.')));
+    return;
+  }
   const movs = data.movs || [];
   despHechas[suc] = true;
   notificar('enviado', suc, '🚚 Te mandaron del CEDIS', movs.map(m => m.etiqueta + ' ' + Number(m.cantidad) + ' ' + m.unidad).join(' · '));
