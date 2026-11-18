@@ -855,7 +855,7 @@ function vInicioTienda(){
       return `<div class="hrow2"><span class="x"><span class="t">${esc(ii.nombre)}${x.cantidad ? ' · ' + fmtCant(ii, x.cantidad) + ' ' + esc(ii.unidad) : ''}</span><span class="s">Lo pediste ${haceTxt(x.created_at)}</span></span><span class="hpend">Esperando</span></div>`; }).join('')}</div>`;
   return hero(LOCS[loc].short, 'Tienda · ' + hoyTxt(), 'mascota-feliz')
     + `<div class="hcta"><div class="k">Tu inventario</div><div class="v">Cuenta lo que tienes</div>
-        <div class="s">${DESP.activo ? 'La fresa, las cremas y el yogurt se cuentan en el corte de caja. Aquí va todo lo demás.' : 'Escribe cuánto tienes de cada cosa. Se guarda solo.'}</div>
+        <div class="s">${DESP.activo ? 'La fresa, las cremas y el yogurt se cuentan en el corte de caja; si te faltan, pídelos aquí con 🙋 Pedir.' : 'Escribe cuánto tienes de cada cosa. Se guarda solo.'}</div>
         <button class="btn wide" onclick="irTab('contar')">Contar ahora</button></div>`
     + llegaron + enCamino + pedidos
     + `<div style="margin-top:14px">${hbig('plus','Pedir algo','Se te acabó o está por acabarse',"irTab('contar');toast('Busca lo que necesitas y toca Pedir.')")}</div>`
@@ -1305,15 +1305,18 @@ function vTienda(){
   let html = '', cat = '';
   for (const i of baseLista()){
     if (i.diario && esMulti(i) && (!q || DESP.activo)) continue;
-    if (DESP.activo && (DESP.cierre_ids||[]).includes(i.id)) continue;   // fresa, cremas y yogurt se cuentan en el corte del POS, no aquí   // ya va arriba en el cuadro de fresa (o ya no aplica en tienda)
+    // fresa cortada, cremas y yogurt se cuentan en el corte del POS: aquí se ven (para poder pedir) pero no se cambian
+    const enCorte = DESP.activo && (DESP.cierre_ids||[]).includes(i.id);
     if (i.categoria !== cat){ cat = i.categoria; html += `<div class="seccion">${esc(cat)}</div>`; }
     const sol = tieneSolic(loc, i.id);
-    if (esMulti(i)){ html += filaMulti(loc, i, false); continue; }
+    if (esMulti(i) && !enCorte){ html += filaMulti(loc, i, false); continue; }
     const s = stock(loc, i.id);
     html += `<div class="fila">
-      <div class="fx"><div class="nm">${esc(i.nombre)}</div><div class="mt">${esc(i.unidad)}</div></div>
-      <div class="fcol"><label>Tienes</label><input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
-        value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)"></div>
+      <div class="fx"><div class="nm">${esc(i.nombre)}</div><div class="mt">${enCorte ? 'se cuenta en el corte de caja' : esc(i.unidad)}</div></div>
+      ${enCorte
+        ? `<div class="fcol"><label>Tienes</label><div class="cant" style="display:flex;align-items:center;justify-content:center;background:#f6eef0;color:var(--muted)" title="Se cuenta en el corte del POS">${fmtCant(i,s)||0}</div></div>`
+        : `<div class="fcol"><label>Tienes</label><input class="cant ${s?'':'cero'}" type="number" inputmode="${esFrac(i)?'decimal':'numeric'}" ${esFrac(i)?'step="0.1"':''}
+        value="${fmtCant(i,s)}" onfocus="this.select()" onchange="contar('${loc}','${i.id}',this.value)"></div>`}
       ${sol && solCamino(sol)
         ? `<div class="fcol"><label>En camino</label><button class="pedirbtn on" style="background:var(--leaf);border-color:var(--leaf)" onclick="irTab('mis')">🚚 ¿Llegó?</button></div>`
         : sol
