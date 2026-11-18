@@ -499,6 +499,7 @@ async function quitarPedir(id){
 /* Dirección: "Ya se lo mandé" — mueve bodega→tienda y marca enviada */
 async function enviarSolic(sid){
   const s = SOLIC.find(x => x.id === sid); if (!s) return;
+  if (esDespItem(s.insumo_id)){ enviando = null; irDespDesdePedido(s.sucursal); return; }   // fresa/cremas/yogurt solo por el envío diario
   const i = item(s.insumo_id);
   const v = limpia(i, document.getElementById('env-'+sid)?.value);
   if (v <= 0){ toast('Pon cuánto le mandas.'); return; }
@@ -671,6 +672,10 @@ async function cargarDesp(){
   try{ const { data } = await db.rpc('lfi_despacho_config'); if (data && Array.isArray(data.items)) DESP = data; }catch(e){}
 }
 const despActivo = () => isDir() && DESP.activo && DESP.items.length > 0;
+/* Pedidos de tienda de fresa/cremas/yogurt: se surten SOLO con el envío diario (un solo registro) */
+const esDespItem = id => despActivo() && DESP.items.some(x => x.insumo_id === id);
+const despPidio = (suc, id) => SOLIC.filter(s => s.sucursal === suc && s.insumo_id === id && solPend(s));
+function irDespDesdePedido(suc){ despSuc = suc; irTab('ini'); abrirAcc('desp'); }
 function despTxt(it, n){
   const v = Math.round((Number(n)||0) * (Number(it.contenido)||1) * 1000) / 1000;
   return it.envase ? `= ${v.toLocaleString('es-MX', {maximumFractionDigits:2})} ${it.unidad}` : '';
@@ -689,7 +694,8 @@ function vDespacho(){
     <label class="flbl">2 · ¿Cuánto le mandas?</label>
     ${DESP.items.map(it => `<div class="linea" style="padding:9px 0">
       <div class="lx"><div class="nm">${esc(it.etiqueta)}</div>
-        <div class="mt">${it.envase ? esc(it.envase) + 's de ' + Number(it.contenido) + ' ' + esc(it.unidad) : esc(it.unidad) + 's'} <b id="dq-${it.insumo_id}" style="color:var(--ink)"></b></div></div>
+        <div class="mt">${it.envase ? esc(it.envase) + 's de ' + Number(it.contenido) + ' ' + esc(it.unidad) : esc(it.unidad) + 's'} <b id="dq-${it.insumo_id}" style="color:var(--ink)"></b></div>
+        ${despPidio(despSuc, it.insumo_id).length ? `<div class="mt" style="color:var(--accent,#c8102e)">🙋 Pidió: ${despPidio(despSuc, it.insumo_id).map(s => s.cantidad ? fmtCant(item(s.insumo_id), s.cantidad) : 'que le mandes').join(' + ')}</div>` : ''}</div>
       <input class="cant" type="number" inputmode="decimal" min="0" step="any" placeholder="0" id="dp-${it.insumo_id}" data-id="${it.insumo_id}" oninput="despCalc(this)">
     </div>`).join('')}
     <button class="btn wide" style="margin-top:12px" onclick="mandarDespacho()">✓ Mandar a ${esc(LOCS[despSuc].short)}</button>
@@ -714,8 +720,17 @@ async function mandarDespacho(){
   }
   const movs = data.movs || [];
   despHechas[suc] = true;
+  // los pedidos de la tienda de estas mismas cosas quedan surtidos con este envío (sin mover inventario otra vez)
+  const ahora = new Date().toISOString(), cerrados = [];
+  for (const m of movs){
+    for (const s of despPidio(suc, m.insumo_id)){
+      const { error: e2 } = await db.from('lfi_solicitudes').update({enviada_at:ahora, enviada_por:quien(), enviada_cant:Number(m.cantidad), resuelto:true, recibida_at:ahora, recibida_por:'Envío diario', recibida_cant:Number(m.cantidad)}).eq('id', s.id);
+      if (!e2) cerrados.push(s.id);
+    }
+  }
   notificar('enviado', suc, '🚚 Te mandaron del CEDIS', movs.map(m => m.etiqueta + ' ' + Number(m.cantidad) + ' ' + m.unidad).join(' · '));
-  toastAccion(`🚚 Mandado a ${LOCS[suc].short}: ${movs.map(m => esc(m.etiqueta)).join(', ')}`, 'Deshacer', async () => {
+  toastAccion(`🚚 Mandado a ${LOCS[suc].short}: ${movs.map(m => esc(m.etiqueta)).join(', ')}${cerrados.length ? ` (cerró ${cerrados.length} ${cerrados.length===1?'pedido':'pedidos'})` : ''}`, 'Deshacer', async () => {
+    if (cerrados.length) await db.from('lfi_solicitudes').update({enviada_at:null, enviada_por:null, enviada_cant:null, resuelto:false, recibida_at:null, recibida_por:null, recibida_cant:null}).in('id', cerrados);
     for (const m of movs){
       await db.rpc('lfi_mover', {p_suc:suc, p_insumo:m.insumo_id, p_delta:-Number(m.cantidad), p_tipo:'ajuste', p_nota:'Deshecho: transferencia', p_por:quien()});
       await db.rpc('lfi_mover', {p_suc:'centro', p_insumo:m.insumo_id, p_delta:Number(m.cantidad), p_tipo:'ajuste', p_nota:'Deshecho: transferencia (regreso)', p_por:quien()});
@@ -1485,6 +1500,13 @@ function vPiden(){
     const i = item(s.insumo_id); if (!i) return '';
     const hrs = Math.round((Date.now() - new Date(s.created_at).getTime())/3600000);
     const disp = stock('centro', s.insumo_id);
+    if (esDespItem(s.insumo_id)){
+      return `<div class="linea">
+      <div class="lx"><div class="nm">${esc(i.nombre)}</div>
+        <div class="mt">pide <b>${s.cantidad ? fmtCant(i,s.cantidad)+' '+esc(i.unidad) : 'que le mandes'}</b> · ${s.por ? esc(s.por)+' · ' : ''}hace ${hrs < 1 ? 'un rato' : hrs + ' h'}<br>Se manda con el envío diario y el pedido se cierra solo.</div></div>
+      <button class="okbtn" onclick="irDespDesdePedido('${s.sucursal}')">🚚 Mandar</button>
+    </div>`;
+    }
     if (enviando === s.id){
       return `<div class="linea">
         <div class="lx"><div class="nm">${esc(i.nombre)} → ${LOCS[s.sucursal].short}</div>
